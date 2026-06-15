@@ -1,0 +1,9 @@
+# Codex agent 메타 (quick_validate.py 미참조 — 검증 무관).
+# handoff 스킬은 공용 Python CLI(core/handoff_cli)에 모든 파일쓰기를 위임한다.
+name: handoff
+summary: 2-tier 세션 핸드오프 — 프로젝트 .handoff/ 상세 정본 + writer-local CURRENT.md 집계 인덱스.
+entrypoint: SKILL.md
+shared_core: ../../core/handoff_cli
+notes: |
+  Claude /handoff 어댑터와 같은 CLI 를 공유한다. 두 어댑터의 on-disk 출력은 바이트 동일.
+  네트워크 연산 없음(fetch/pull/push 금지). writer-local 인덱스는 파생물.

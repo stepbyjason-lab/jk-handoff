@@ -1,0 +1,16 @@
+# Claude Code 로컬 설정 (개인별 권한 allowlist — 공유 불필요)
+.claude/settings.local.json
+
+# MemKraft 임시 스크립트 (생성 즉시 삭제하지만 안전망)
+_mk_*.py
+
+# Python 산출물
+__pycache__/
+*.py[cod]
+*.egg-info/
+.pytest_cache/
+
+# OS 부산물
+Thumbs.db
+.DS_Store
+desktop.ini

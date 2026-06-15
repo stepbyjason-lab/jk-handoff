@@ -1,0 +1,23 @@
+[build-system]
+requires = ["setuptools>=61"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "jk-handoff"
+version = "0.2.3"
+description = "2-tier 세션 핸드오프 공용 CLI — Claude /handoff 와 Codex $handoff 가 공유하는 단일 실행가능 코어"
+readme = "README.md"
+requires-python = ">=3.10"
+license = { text = "MIT" }
+
+# 공용 CLI 패키지(handoff_cli)는 core/ 아래에 있다.
+# 라이브 설치: 각 머신에서 한 번 `pip install -e .` → 어댑터가 PYTHONPATH 없이
+# `python -m handoff_cli` 호출 가능.
+[tool.setuptools]
+package-dir = { "" = "core" }
+
+[tool.setuptools.packages.find]
+where = ["core"]
+
+[project.scripts]
+handoff-cli = "handoff_cli.__main__:main"
