@@ -206,6 +206,19 @@ _MESSAGES: dict[str, dict[str, str]] = {
             "잠재 secret 라인 {idx} 를 글로벌 CURRENT.md 에서 [REDACTED] 처리 "
             "(git 히스토리는 안 지워짐 — 이미 커밋된 secret 은 filter-repo 필요)."
         ),
+        "warn_invalid_sections": (
+            "sections 필드가 dict 가 아님 — 무시하고 전 섹션 기본값으로 저장."
+        ),
+        "warn_unknown_section_key": (
+            "미인식 section 키 '{section_key}' — 매핑되는 표준 섹션이 없어 버림(내용 유실 방지를 위한 경고)."
+        ),
+        "warn_duplicate_section_key": (
+            "section '{canonical}' 에 중복 키 충돌 — '{kept}' 값을 채택, 무시된 키: {ignored}."
+        ),
+        "warn_invalid_section_value": (
+            "section '{canonical}'(원본 키 '{section_key}') 의 값이 문자열이 아님 "
+            "— 무시하고 기본값 사용."
+        ),
     },
     "en": {
         "done_default": "Nothing confirmed complete this session - in progress or under review.",
@@ -317,6 +330,20 @@ _MESSAGES: dict[str, dict[str, str]] = {
         "warn_secret_redacted": (
             "Redacted a potential secret on line {idx} of global CURRENT.md "
             "([REDACTED] — git history is not rewritten; secrets already committed need filter-repo)."
+        ),
+        "warn_invalid_sections": (
+            "sections field is not a dict — ignored, all sections saved with defaults."
+        ),
+        "warn_unknown_section_key": (
+            "Unrecognized section key '{section_key}' — no matching standard section, dropped "
+            "(warned to prevent silent content loss)."
+        ),
+        "warn_duplicate_section_key": (
+            "Duplicate key conflict for section '{canonical}' — kept '{kept}', ignored: {ignored}."
+        ),
+        "warn_invalid_section_value": (
+            "Value for section '{canonical}' (raw key '{section_key}') is not a string "
+            "— ignored, default used."
         ),
     },
 }

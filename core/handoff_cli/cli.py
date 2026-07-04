@@ -7,6 +7,7 @@
 from __future__ import annotations
 
 import os
+import re
 from pathlib import Path
 
 from . import current, detail, messages, repo, status as status_mod, topics
@@ -15,6 +16,20 @@ __all__ = ["cmd_save", "cmd_list", "cmd_find", "cmd_resume", "cmd_archive", "cmd
 
 
 _VALID_SOURCES = ("claude-code", "codex")
+
+_CANONICAL_SECTION_KEYS = (
+    "done", "open", "failed_attempts", "not_tried",
+    "blockers", "decisions", "exact_next_step", "verification",
+)
+
+# alias 테이블은 "정규화 규칙을 거쳐도 canonical 과 형태가 다른 것"만 담는다.
+# 대소문자·공백·하이픈 변형은 정규화 규칙 자체가 이미 처리하므로 alias 로 중복 등재하지 않는다
+# (예: "Done"/"DONE"/"failed attempts"/"Failed Attempts" 는 alias 테이블에 넣지 않는다 —
+#  아래 정규화만으로 이미 canonical 과 일치한다).
+_SECTION_KEY_ALIASES = {
+    "not_tried_yet": "not_tried",
+    "blockers_and_questions": "blockers",
+}
 
 
 def _default_global_root(source: str = "claude-code") -> str:
@@ -42,6 +57,72 @@ def _validate_source(raw: str | None, warnings: list[str], lang: str) -> str:
         )
         return "claude-code"
     return value
+
+
+def _normalize_section_key(raw_key: str) -> str | None:
+    """strip → lowercase → 영숫자 외 문자는 전부 `_` 로 치환 → 연속/양끝 `_` 제거.
+
+    "Blockers & Questions" -> "blockers_questions" (alias 미매치 → 미인식 키로 경고,
+    크래시는 없음 — 특수문자 포함 입력에 대한 방어적 동작이지 신규 alias 요구사항 아님).
+    "Not Tried Yet?" -> "not_tried_yet" (트레일링 특수문자에도 안전).
+    """
+    normalized = re.sub(r"[^a-z0-9]+", "_", raw_key.strip().lower()).strip("_")
+    if normalized in _CANONICAL_SECTION_KEYS:
+        return normalized
+    return _SECTION_KEY_ALIASES.get(normalized)
+
+
+def _normalize_sections(raw_sections: object, warnings: list[str], lang: str) -> dict:
+    """반환값은 canonical 키만 key 로 갖는 *부분* dict 다 — 매핑 안 된 canonical 은
+    key 자체가 없다(전체 8-key dict 로 미리 채우지 않는다). assemble_body() 의 기존
+    `sections.get('done')` 류 `.get()` 호출이 그대로 기본값 fallback 을 처리하므로
+    이 반환 계약과 100% 호환된다. assemble_body() 시그니처·로직은 수정하지 않는다.
+    """
+    if not isinstance(raw_sections, dict):
+        if raw_sections:  # None/빈 값이 아닌데 dict 도 아니면 입력 오류
+            warnings.append(messages.msg("warn_invalid_sections", lang))
+        return {}
+
+    # canonical 별로 (원본 키, 값) 을 raw_sections 순회 순서(=payload insertion order)대로 버킷팅.
+    buckets: dict[str, list[tuple[str, object]]] = {}
+    for raw_key, value in raw_sections.items():
+        if not isinstance(raw_key, str):
+            warnings.append(messages.msg("warn_unknown_section_key", lang, section_key=repr(raw_key)))
+            continue
+        canonical = _normalize_section_key(raw_key)
+        if canonical is None:
+            warnings.append(messages.msg("warn_unknown_section_key", lang, section_key=raw_key))
+            continue
+        buckets.setdefault(canonical, []).append((raw_key, value))
+
+    result: dict[str, object] = {}
+    for canonical, entries in buckets.items():
+        if len(entries) == 1:
+            kept_key, kept_value = entries[0]
+        else:
+            # 충돌 해소(2개든 3개 이상이든 동일 규칙): (1) 원본 키가 canonical 문자열과
+            # 정확히 같은 항목이 있으면 값 유무와 무관하게 그 값을 채택(빈 문자열이어도
+            # 채택 — 인지된 트레이드오프) (2) 없으면 buckets 진입 순서(=raw_sections 순회 중
+            # 그 canonical 에 처음 도달한 원본 키) 채택 (3) 나머지는 전부 ignored_keys.
+            exact = [e for e in entries if e[0] == canonical]
+            kept_key, kept_value = exact[0] if exact else entries[0]
+            ignored_keys = [k for k, _ in entries if k != kept_key]
+            warnings.append(messages.msg(
+                "warn_duplicate_section_key", lang,
+                canonical=canonical, kept=kept_key, ignored=", ".join(ignored_keys),
+            ))
+        # value 자체가 문자열이 아니면(외부 payload 가 int/list/dict 등을 보낸 경우)
+        # assemble_body()._section() 의 `(value or "").strip()` 에서 크래시하므로,
+        # 여기서 버킷에 넣지 않고 경고만 남긴다(강제 str() 형변환은 하지 않는다 —
+        # 계약 지시: dict/list 를 문자열화하면 쓰레기가 본문에 그대로 남는다).
+        if not isinstance(kept_value, str):
+            warnings.append(messages.msg(
+                "warn_invalid_section_value", lang,
+                canonical=canonical, section_key=kept_key,
+            ))
+            continue
+        result[canonical] = kept_value
+    return result
 
 
 def _resume_prompt(project_name: str, root: str, topic: str, summary: str, lang: str) -> str:
@@ -151,8 +232,9 @@ def cmd_save(payload: dict, cwd: str, global_root: str | None = None) -> dict:
         "summary": summary,
         "git": git,
     }
-    body = detail.assemble_body(meta, payload.get("sections", {}),
-                               payload.get("files_touched", []), created_human, lang)
+    sections = _normalize_sections(payload.get("sections", {}), warnings, lang)
+    body = detail.assemble_body(meta, sections, payload.get("files_touched", []),
+                               created_human, lang)
 
     existing = {p.name for p in tdir.glob("*.md")} if tdir.exists() else set()
     detail_path = None

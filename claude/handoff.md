@@ -135,16 +135,16 @@ git_dirty — 어댑터가 작성 안 함, CLI 가 실측해 생성)와 다음 1
 각 섹션의 내용을 사용자의 언어로 채운다:
 
 ```markdown
-## Done
-## Open
-## Failed Attempts
-## Not Tried Yet
-## Blockers And Questions
-## Git State
-## Files Touched
-## Decisions
-## Exact Next Step
-## Verification
+## Done              → sections.done
+## Open               → sections.open
+## Failed Attempts    → sections.failed_attempts
+## Not Tried Yet       → sections.not_tried
+## Blockers And Questions → sections.blockers
+## Git State          → (sections 아님 — CLI 가 git meta 로 자동 생성)
+## Files Touched       → (sections 아님 — top-level files_touched 배열)
+## Decisions          → sections.decisions
+## Exact Next Step     → sections.exact_next_step
+## Verification        → sections.verification
 ```
 
 ### Durable Memory
