@@ -1,8 +1,9 @@
 """토픽 상세 본문 · LATEST.md · INDEX.md (프로젝트 정본).
 
-핵심 동작: Body Template 10섹션, detail frontmatter 9키(status 는 4-value),
-동시저장 보존, orphan 감지, INDEX 재생성 우선순위(status·summary·date precedence,
-archive suggested 무자동이동), LATEST 포인터 표준/레거시 변형 독해.
+라이브 동작 보존(단계1 보존표): Body Template 11섹션, detail frontmatter 9키
+(status 만 4-value 로 확장), 동시저장 보존, orphan 감지, INDEX 재생성 우선순위
+(status·summary·date precedence, archive suggested 무자동이동), LATEST 포인터
+표준/레거시 변형 독해.
 """
 
 from __future__ import annotations
@@ -99,11 +100,10 @@ def _section(value: str | None, empty: str) -> str:
 
 def assemble_body(meta: dict, sections: dict, files_touched: list, created_human: str,
                   lang: str = "ko") -> str:
-    """Body Template 10섹션을 바이트 결정적으로 조립한다.
+    """라이브 Body Template 11섹션을 바이트 결정적으로 조립한다.
 
-    섹션 헤딩(`## Done` 등)·frontmatter 키·파일명 규칙은 언어 무관 불변 — 번역
-    대상은 각 섹션의 기본값(placeholder)·Git State 라인·Files Touched 빈 값
-    문구뿐이다.
+    섹션 헤딩(`## Done` 등)·frontmatter 키·파일명 규칙은 언어 무관 불변 — 번역 대상은 각 섹션의 기본값(placeholder)·Decisions/Unapproved Proposals 고정 주석 줄·Git State 라인·Files Touched
+    빈 값 문구뿐이다.
     """
     git = meta["git"]
     if git["is_git"]:
@@ -162,7 +162,11 @@ def assemble_body(meta: dict, sections: dict, files_touched: list, created_human
         "## Files Touched\n\n"
         f"{files_block}\n\n"
         "## Decisions\n\n"
+        f"{messages.msg('decisions_note', lang)}\n\n"
         f"{_section(sections.get('decisions'), messages.msg('decisions_default', lang))}\n\n"
+        "## Unapproved Proposals\n\n"
+        f"{messages.msg('unapproved_note', lang)}\n\n"
+        f"{_section(sections.get('unapproved'), messages.msg('unapproved_default', lang))}\n\n"
         "## Exact Next Step\n\n"
         f"{_section(sections.get('exact_next_step'), messages.msg('exact_next_step_default', lang))}\n\n"
         "## Verification\n\n"
@@ -191,7 +195,7 @@ def write_latest(tdir: Path, target_filename: str, summary: str) -> None:
 
 
 def detect_orphan(tdir: Path, latest_target: str | None, lang: str = "ko") -> str | None:
-    """LATEST 가 가리키는 것보다 새 본문파일이 있으면 경고 문자열 (orphan)."""
+    """LATEST 가 가리키는 것보다 새 본문파일이 있으면 경고 문자열 (orphan, test 11)."""
     bodies = sorted(
         p.name for p in tdir.glob("*.md") if _BODY_FILE_RE.match(p.name)
     )
@@ -269,9 +273,9 @@ def _read_topic_summary(root: str, tdir: Path, archived: bool, lang: str = "ko")
                     break
         next_step = _extract_section(body, "Exact Next Step")
         blocker = _extract_section(body, "Blockers And Questions")
-        # 언어중립 기본값 판정: ko/en 어느 언어로 저장된 본문이든 "블로커 없음" 계열
-        # placeholder 는 상수집합(messages.BLOCKER_DEFAULTS) 비교로 빈 값 처리한다 —
-        # ko 문자열 substring 의존을 제거.
+        # 언어중립 기본값 판정: ko/en 어느 언어로 저장된 본문이든
+        # "블로커 없음" 계열 placeholder 는 상수집합(messages.BLOCKER_DEFAULTS) 비교로
+        # 빈 값 처리한다 — ko 문자열 substring 의존을 제거.
         if blocker in messages.BLOCKER_DEFAULTS:
             blocker = ""
         if not date and target:
@@ -279,7 +283,7 @@ def _read_topic_summary(root: str, tdir: Path, archived: bool, lang: str = "ko")
     elif target:
         date = target[:10]
 
-    # frontmatter status 부재 시(레거시 본문) 포인터/요약 텍스트의 종료신호
+    # 라이브 INDEX 호환: frontmatter status 부재 시 포인터/요약 텍스트의 종료신호
     # (CLOSED/closed/done) 를 fallback 으로 읽는다.
     if raw_status is None:
         latest_text = ""

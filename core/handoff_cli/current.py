@@ -92,7 +92,8 @@ def resolve_global_dir(global_root: str, name: str, project_id: str,
 def _parse_recent(text: str) -> list[str]:
     """`## 최근 변경`/`## Recent Changes` 아래 항목을 읽는다.
 
-    프로젝트가 lang 을 바꿔 재생성했을 수 있으므로 두 언어 헤딩 모두 인식한다.
+    프로젝트가 lang 을 바꿔 재생성했을 수 있으므로 두 언어 헤딩 모두 인식한다
+    (언어중립 파싱 — 저장 언어와 무관하게 읽는다).
     """
     heading = None
     for candidate in (h["current_recent_heading"] for h in messages._MESSAGES.values()):
@@ -226,7 +227,7 @@ def regenerate_current(global_root: str, name: str, project_id: str, root: str,
     # 집계 재생성.
     topics = detail.scan_topics(root, include_archived=False, lang=lang)
     recent = _parse_recent(existing_text)
-    # recent_entry 가 있고 직전 항목과 다르면 prepend — 무변경 재저장/백필 idempotence 유지.
+    # recent_entry 가 있고 직전 항목과 다르면 prepend — 무변경 재저장/백필 idempotence(test 18).
     if recent_entry and (not recent or recent[0] != recent_entry):
         recent = [recent_entry] + recent
     recent = recent[:_MAX_RECENT]

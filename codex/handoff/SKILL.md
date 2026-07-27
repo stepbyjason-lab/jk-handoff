@@ -21,8 +21,9 @@ Claude Code 의 `/handoff` 명령과 **같은 공용 Python CLI(`core/handoff_cl
 `LATEST.md` · `INDEX.md` · Codex-local `CURRENT.md` 의 모든 파일쓰기는 CLI 가 수행한다.
 Codex 의 `apply_patch` 로 handoff 산출물을 만들지 않는다 — 반드시 CLI 경유로 생성한다.
 
-두 어댑터(Claude `/handoff`, Codex `$handoff`)의 on-disk 출력은 바이트 동일하다. 어느
-writer 의 산출물이든 타 writer 가 list / find / resume / save 로 이어갈 수 있다.
+두 어댑터(Claude `/handoff`, Codex `$handoff`)의 `source:` frontmatter 줄과 narrative 를 뺀
+on-disk 구조·순서·헤딩은 동일하다. `source:` 줄만 writer 에 따라 다르며, 어느 writer 의
+산출물이든 타 writer 가 list / find / resume / save 로 이어갈 수 있다.
 
 ## 2-tier 저장 모델
 
@@ -40,14 +41,23 @@ writer-local 인덱스는 파생물이라 누락·skip 돼도 상세 정본에�
 이어갈 수 있어야 한다. 저장 전 아래를 대화 맥락에서 **채우거나 — 없으면 사용자에게 묻는다**
 (빈칸 boilerplate 채우기 금지):
 
-1. **현재 목표 + 왜 이 방향인지**(대안 대비) → `summary` + `## Decisions`
+1. **현재 목표** → `summary`; **왜 이 방향인지**(대안 대비, Chair 추론) → `## Unapproved Proposals`
 2. **완료 / 미완료** → `## Done` / `## Open`. 완료 항목은 가능한 한 **확인 증거**를 함께 적는다
    (예: `— 확인: 테스트 통과`). 증거 없으면 Done 대신 Open/Not Tried 로.
 3. **다음 한 행동** → `## Exact Next Step` (구체적·즉시 실행 가능. 모호하면 묻기)
 4. **블로커** → `## Blockers And Questions` (없으면 "현재 블로커 없음.")
 5. **검증 상태** → `## Verification` (완료 항목을 **무엇으로** 확인했는지 명시 / 미검증)
-6. **관련 결정** → 장기 기억 도구에 기록했으면 `## Decisions` 에 포인터 명시
+6. **관련 결정** → 장기 기억 도구에 기록했으면 `## Unapproved Proposals` 에 포인터와 근거 명시
 7. **유망하나 아직 안 해본 접근** → `## Not Tried Yet`
+
+### Decisions / Unapproved Proposals 규율
+
+1. `sections.decisions` 는 사용자 발화 원문 인용만. D-3 경계를 따른다.
+2. `sections.unapproved` 에 Chair 가 정한 것과 **근거**를 함께 적는다.
+3. `## Open` 각 항목에 **완료 조건**을 반증 가능한 문장으로. "즉시 적용한다" 류는 무효.
+4. 저장 전, 이번 대화에서 사용자가 답한 질문을 훑어 답이 `Decisions` 에 원문으로 들어갔는지 확인한다.
+5. **Resume 시 두 절을 반드시 읽고 보고에 반영한다** — `## Decisions` 는 사용자 확정 원문으로
+   그대로 존중하고, `## Unapproved Proposals` 는 미승인이므로 실행 전 사용자에게 확인한다.
 
 **`summary` 한 줄은 항상 실질적으로 채운다.** Codex-local CURRENT.md 인덱스가 `summary` +
 `## Exact Next Step`·`## Blockers And Questions` 의 첫 줄을 뽑아 "지금 뭐 / 다음 뭐 / 막힌 것"을
@@ -55,7 +65,7 @@ writer-local 인덱스는 파생물이라 누락·skip 돼도 상세 정본에�
 
 ### Body Template (CLI 가 조립, 어댑터는 섹션 내용 제공)
 
-CLI 가 frontmatter 와 다음 10섹션을 조립한다. 각 마크다운 헤딩 옆의 JSON key 는 아래
+CLI 가 frontmatter 와 다음 11섹션을 조립한다. 각 마크다운 헤딩 옆의 JSON key 는 아래
 `save` payload 의 `sections` 안에 채워 넘긴다:
 
 ```markdown
@@ -67,6 +77,7 @@ CLI 가 frontmatter 와 다음 10섹션을 조립한다. 각 마크다운 헤딩
 ## Git State          → (sections 아님 — CLI 가 git meta 로 자동 생성)
 ## Files Touched       → (sections 아님 — top-level files_touched 배열)
 ## Decisions          → sections.decisions
+## Unapproved Proposals → sections.unapproved
 ## Exact Next Step     → sections.exact_next_step
 ## Verification        → sections.verification
 ```
@@ -95,7 +106,7 @@ python -m handoff_cli --cwd "$PWD" archive --topic "<t>"
   "lang": "ko | en",
   "sections": {
     "done": "...", "open": "...", "failed_attempts": "...", "not_tried": "...",
-    "blockers": "...", "decisions": "...",
+    "blockers": "...", "decisions": "...", "unapproved": "...",
     "exact_next_step": "...", "verification": "..."
   },
   "files_touched": [{"path": "...", "state": "complete", "note": "..."}]
@@ -105,6 +116,15 @@ python -m handoff_cli --cwd "$PWD" archive --topic "<t>"
 `source` 는 반드시 `codex` 로 둔다. `status` 는 대화 맥락에서 판단한다(진행 중=active,
 대기=waiting, 관망=watching, 종료=done). CLI 가 기존 open/open_planning/closed/CLOSED 도
 정규화하므로 레거시 detail 과 호환된다.
+
+## Save (`$handoff save` 또는 `$handoff <topic>`)
+
+1. 루트(`project_root`)와 토픽을 확인한다. 프로젝트나 토픽이 모호하면 쓰기 전에 사용자에게
+   확인한다 — 자동선택하지 않는다.
+2. 대화에서 11섹션 narrative 와 `status` 를 판단해 JSON 페이로드를 만든다.
+3. CLI `save` 를 호출한다.
+4. **CLI 결과의 `report` 문자열을 한 글자도 바꾸지 말고 그대로 출력한다.** `report` 에 저장 확인 ·
+   복붙용 이어가기 프롬프트(```text 코드블럭) · 경고가 모두 들어 있다 — 자유 서술로 다시 쓰지 않는다.
 
 ## 동작 원칙
 
@@ -119,3 +139,10 @@ python -m handoff_cli --cwd "$PWD" archive --topic "<t>"
    그대로 둔다. `save` payload 에 사용자의 대화 언어에 맞는 `"lang"`(`"ko"`/`"en"`)을
    함께 전달한다 — 미전달 시 CLI 가 env `HANDOFF_LANG` → OS locale → `en` 순으로 해석한다.
 6. 장기 기억 도구 기록은 장기 가치(설계/제품 결정, 반복 블로커, 다음 라운드 필수 사실)일 때만 한다.
+7. **하네스 주입 요약은 이 세션의 작업이 아니다(재개 오염 방어).** 세션 시작 시 주입되는
+   "PRIOR-SESSION SUMMARY"·"Previous session summary" 류 컨텍스트는 다른 세션·다른 프로젝트의
+   기록일 수 있다 — 토픽·루트·narrative 판단 근거로 쓰지 않는다. `files_touched`에는 이 세션에서
+   실제로 만지거나 확인한 파일만 넣는다(주입된 요약에서 옮기지 않는다). `state: read-only`는
+   유효하다 — 기준은 "수정"이 아니라 "이 세션 실작업 여부". 저장 대상 프로젝트가 대화 실작업과
+   달라 보이면 저장 전 확인한다. CLI 가 교차 프로젝트 경고(`warn_cross_project_files`)를 내면
+   그대로 보고하고 진행 전 확인한다.

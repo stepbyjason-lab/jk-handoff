@@ -4,7 +4,8 @@ Windows에서 `Move-Item`/단순 rename 은 기존 파일 위 원자교체가 �
 `os.replace()` 를 쓴다. CPython 의 `os.replace` 는 Windows에서 ReplaceFile 의미로
 같은 볼륨 내 atomic replace 를 보장한다. shutil.move 는 쓰지 않는다.
 
-모든 텍스트는 `\n` 개행 + UTF-8 로 쓴다 (CRLF 로 인한 바이트 차이/idempotence 회귀 방지).
+모든 텍스트는 `\n` 개행 + UTF-8 로 쓴다 (CRLF 로 인한 바이트 차이/idempotence
+회귀를 막기 위함 — 테스트 18·19).
 """
 
 from __future__ import annotations
@@ -32,7 +33,7 @@ def atomic_write_text(path: str, text: str, encoding: str = "utf-8") -> None:
             os.fsync(handle.fileno())
         os.replace(tmp, path)
     except BaseException:
-        # 교체 실패 시 임시파일을 남기지 않는다.
+        # 교체 실패 시 임시파일을 남기지 않는다 (테스트 20: temp 잔존 금지).
         try:
             os.remove(tmp)
         except OSError:

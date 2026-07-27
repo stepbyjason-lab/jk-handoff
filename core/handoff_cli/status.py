@@ -1,7 +1,7 @@
 """status taxonomy 정규화.
 
 신 taxonomy: active / waiting / watching / done.
-기존 detail 은 신 taxonomy 를 모르므로 기존 값을 정규화해 마이그레이션 없이 호환한다.
+라이브 detail 은 신 taxonomy 를 모르므로 기존 값을 정규화해 마이그레이션 없이 호환한다.
 - open, open_planning → active
 - done, closed, CLOSED → done (→archived 제외)
 - waiting, watching, active → 그대로

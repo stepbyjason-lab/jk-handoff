@@ -12,6 +12,10 @@ import sys
 
 from . import cli
 
+# UTF-8 BOM(U+FEFF). 소스에 리터럴 문자를 박지 않는다 — 보이지 않아서 에디터·인코딩
+# 왕복에서 조용히 사라지거나 이중 이스케이프되기 쉽다.
+_BOM = chr(0xFEFF)
+
 
 def _read_payload(args) -> dict:
     if args.input:
@@ -19,7 +23,11 @@ def _read_payload(args) -> dict:
         # 투명하게 벗긴다. BOM 없는 UTF-8 도 그대로 읽힌다.
         with open(args.input, encoding="utf-8-sig") as handle:
             return json.load(handle)
-    return json.load(sys.stdin)
+    # stdin 도 같은 방어가 필요하다(비대칭이면 절반만 막힌다). PowerShell 5.1 에서
+    # `$OutputEncoding = [System.Text.Encoding]::UTF8` 은 BOM 을 붙이는 인코딩이라,
+    # 그 상태로 JSON 을 파이프하면 선두에 BOM 이 실려 오고 json.load 가
+    # "Unexpected UTF-8 BOM" 으로 죽는다. 호출자의 인코딩 설정에 의존하지 않고 여기서 벗긴다.
+    return json.loads(sys.stdin.read().lstrip(_BOM))
 
 
 def _force_utf8_streams() -> None:

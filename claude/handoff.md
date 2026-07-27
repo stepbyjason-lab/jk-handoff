@@ -6,17 +6,14 @@ model: sonnet
 
 # /handoff - 2-tier 세션 핸드오프 (Claude 어댑터)
 
-여러 세션·여러 머신을 오가는 환경에서 작업의 현재 상태를 넘기는 명령이다. 이 문서는
-**Claude Code 어댑터**로, 모든 파일쓰기는 공용 Python CLI(`core/handoff_cli`)에 위임한다.
-어댑터는 (1) 현재 대화에서 Done/Open/결정/다음행동을 판단해 사용자의 언어로 narrative 를 만들고,
-(2) CLI 에 구조화 JSON 을 넘기고, (3) CLI 출력·경고를 사용자에게 보고한다.
-
-Codex 어댑터(`codex/handoff/SKILL.md`)와 **같은 CLI 를 공유**한다. 두 어댑터의 on-disk
-출력은 바이트 동일하며(narrative 본문 텍스트만 다를 수 있음), 어느 writer 의 산출물이든
-타 writer 가 list/find/resume/save 할 수 있다.
-
-`/hd` 같은 정적 컨텍스트 로더와 역할이 다르다. `/handoff`는 이번 작업의 완료 사항, 막힌
-지점, 다음 행동을 남기는 동적 기록이다.
+여러 세션·여러 머신을 오가며 작업 상태를 넘기는 명령. **Claude Code 어댑터**로, 모든
+파일쓰기는 공용 Python CLI(`core/handoff_cli`)에 위임한다. 어댑터는 (1) 대화에서
+Done/Open/결정/다음행동을 판단해 사용자의 언어로 narrative 를 만들고, (2) CLI 에 구조화 JSON 을
+넘기고, (3) CLI 출력·경고를 보고한다. Codex 어댑터(`codex/handoff/SKILL.md`)와 **같은 CLI
+를 공유**하며 `source:` frontmatter 줄과 narrative 를 빼면 on-disk 구조·순서·헤딩이 동일하다.
+`source:` 줄만 writer 에 따라 다르며, 어느 writer 의 산출물이든 타 writer 가 list/find/resume/save
+할 수 있다. `/hd` 같은 정적 컨텍스트
+로더와 달리, `/handoff`는 완료 사항·막힌 지점·다음 행동을 남기는 동적 기록이다.
 
 ## 2-tier 저장 모델
 
@@ -28,10 +25,9 @@ Codex 어댑터(`codex/handoff/SKILL.md`)와 **같은 CLI 를 공유**한다. �
 
 ## Core Rules
 
-1. **Source of truth 는 현재 프로젝트의 `.handoff/`다.**
-   - 기본 루트: 현재 `cwd`의 프로젝트 마커를 우선하고, 없으면 git 저장소 루트.
-   - 명시 루트: `/handoff --root <path> ...`.
-   - 하위 프로젝트에서 `~/projects` 같은 상위 폴더로 자동 승격하지 않는다.
+1. **Source of truth 는 현재 프로젝트의 `.handoff/`다.** 기본 루트: 현재 `cwd`의 프로젝트
+   마커를 우선하고, 없으면 git 저장소 루트. 명시 루트: `/handoff --root <path> ...`. 하위
+   프로젝트에서 `~/projects` 같은 상위 폴더로 자동 승격하지 않는다.
 2. **글로벌 `~/.claude/handoffs/<project-name>/`에는 CURRENT.md 인덱스 1장만 둔다.** 상세
    본문(timestamped)은 여전히 글로벌에 만들지 않는다 — 프로젝트 `.handoff/`에만.
 3. **`INDEX.md`·`CURRENT.md`는 캐시·파생이다.** 정본은 각 토픽 `LATEST.md` 스캔 결과다.
@@ -39,25 +35,31 @@ Codex 어댑터(`codex/handoff/SKILL.md`)와 **같은 CLI 를 공유**한다. �
    함께 기록한다(상세는 "Durable Memory" 절 참조). auto-memory 포인터를 자동 추가하지 않는다.
 5. **동시 저장으로 본문을 덮어쓰지 않는다.** CLI 가 신규 본문을 보존하고, LATEST 충돌이
    보이면 갱신을 중단·보고한다 — 사용자에게 어느 체인을 최신으로 할지 확인한다.
-6. **작업 로그·핸드오프 본문은 사용자의 언어로 작성한다.** (2026-05-31 사용자 지정,
-   2026-07 언어체인 도입)
-   - 코드·명령어·경로·식별자(slug·frontmatter 키)·인용 영문 원문은 원어 그대로 둔다.
-   - `save` payload 에 사용자의 대화 언어에 맞는 `"lang"`(`"ko"`/`"en"`)을 함께
-     전달한다 — report·resume_prompt·본문 기본값·경고·인덱스 장식 텍스트가 그
-     언어로 렌더링된다. 미전달 시 CLI 가 env `HANDOFF_LANG` → OS locale → `en`
-     순으로 자동 해석한다.
+6. **작업 로그·핸드오프 본문은 사용자의 언어로 작성한다**(2026-05-31 사용자 지정,
+   2026-07 언어체인 도입). 코드·명령어·경로·식별자(slug·frontmatter 키)·인용 영문
+   원문은 원어 그대로 둔다. `save` payload 에 사용자의 대화 언어에 맞는 `"lang"`
+   (`"ko"`/`"en"`)을 함께 전달한다 — report·resume_prompt·본문 기본값·경고·인덱스
+   장식 텍스트가 그 언어로 렌더링된다. 미전달 시 CLI 가 env `HANDOFF_LANG` → OS
+   locale → `en` 순으로 자동 해석한다.
 7. **`/handoff`는 네트워크 연산(fetch/pull/push)을 하지 않는다.** 네트워크 동기화는 `/sync`
    책임이다. 글로벌 갱신이 충돌·원격앞섬으로 막히면 CLI 가 글로벌만 skip 하고 경고한다.
+8. **하네스 주입 요약은 이 세션의 작업이 아니다(재개 오염 방어).** 세션 시작 시 주입되는
+   "PRIOR-SESSION SUMMARY"·"Previous session summary" 류 컨텍스트는 다른 세션·다른 프로젝트의
+   기록일 수 있다 — 토픽·루트·narrative 판단의 근거로 쓰지 않는다. `files_touched`에는 이
+   세션에서 실제로 만지거나 확인한 파일만 넣는다(주입된 요약에서 옮기지 않는다). `state:
+   read-only`는 유효하다 — 기준은 "수정"이 아니라 "이 세션 실작업 여부". 저장 대상 프로젝트가
+   대화의 실작업과 달라 보이면(cwd ≠ 작업 파일 소속) 저장 전 사용자에게 확인한다. CLI 가
+   교차 프로젝트 경고(`warn_cross_project_files`)를 내면 그대로 보고하고 진행 전 확인한다.
 
 ## Usage / CLI 위임
 
 어댑터는 직접 Write/Edit 로 handoff 파일을 만들지 않는다 — 아래 CLI 호출로만 동작한다.
-(설치 전제, 머신당 1회: jk-handoff 레포에서 `pip install -e .` 를 실행하면 `handoff_cli`
-가 전역 import 가능해져 PYTHONPATH 없이 `python -m handoff_cli` 가 동작한다.)
+(설치 전제, 머신당 1회: jk-handoff 레포에서 `pip install -e .` 실행 시 `handoff_cli` 가 전역
+import 가능해져 PYTHONPATH 없이 `python -m handoff_cli` 가 동작한다.)
 
 ```text
 /handoff                              # 현재 프로젝트 active 목록 + 이 세션 토픽 제안
-/handoff save                         # 토픽이 명백하면 바로 저장 → python -m handoff_cli --cwd <cwd> save (JSON stdin)
+/handoff save                         # 자동 토픽 결정 트리 적용 (토픽이 명백하면 바로 저장)
 /handoff <topic> [description]        # 지정 토픽[+한 줄 요약]으로 저장
 /handoff list                         # 현재 프로젝트 토픽 목록(LATEST 스캔)
 /handoff list --all                   # archived 포함
@@ -75,7 +77,7 @@ Codex 어댑터(`codex/handoff/SKILL.md`)와 **같은 CLI 를 공유**한다. �
 `source: "claude-code"` · `status`(active/waiting/watching/done — 진행 중=`active`, 사용자
 입력·외부 의존 대기=`waiting`, 나중에 볼 관망=`watching`, 종료=`done`; CLI 가 레거시
 `open`/`open_planning`/`closed`/`CLOSED` 값도 정규화) · `summary`(한 줄 요약) ·
-`sections`(Body Template 10섹션 키와 동일 — 아래 참조) · `files_touched`(`path`/`state:
+`sections`(Body Template 11섹션 키와 동일 — `sections.unapproved` 포함, 아래 참조) · `files_touched`(`path`/`state:
 complete|in-progress|broken|read-only`/`note` 배열) · `lang`(선택, `"ko"`/`"en"` — 사용자의
 대화 언어. 생략하면 CLI 가 env/OS locale 로 자동 해석).
 
@@ -86,40 +88,49 @@ CLI 결과의 `warnings` 배열을 **빠짐없이 사용자에게 보고**한다
 
 `python -m handoff_cli list` 로 active 토픽을 스캔해 보여주고(파일 수정 없음), 현재 세션
 수정 파일·`cwd`·사용자 주제로 토픽을 제안한다. CLI 출력의 `project_root`/`handoff store` 를
-첫 줄에 보고한다: `project root: <absolute path>` / `handoff store: <project root>/.handoff/`.
+첫 줄에 보고: `project root: <absolute path>` / `handoff store: <project root>/.handoff/`.
 
 ## Save (`/handoff save` 또는 `/handoff <topic>`)
 
 1. 루트를 결정·보고한다(CLI `project_root`).
 2. 토픽을 검증한다(CLI 가 한글·소문자정규화·traversal 거부).
-3. 대화에서 10섹션 narrative 와 `status` 를 판단해 JSON 페이로드를 만든다.
+3. 대화에서 11섹션 narrative 와 `status` 를 판단해 JSON 페이로드를 만든다.
 4. CLI `save` 를 호출한다. CLI 가 수행: `.project-id` 생성(save 경로에서만)/읽기 · git
    branch·full commit·dirty·시각 실측 · 상세 본문 저장(기존 파일 덮어쓰지 않음, 원자교체) ·
    `LATEST.md`·`INDEX.md` 재생성 · 글로벌 CURRENT.md 를 전 active 토픽 집계로 재생성
    (best-effort, 네트워크 없음).
-5. **CLI 결과의 `report` 문자열을 한 글자도 바꾸지 말고 그대로 출력한다.** 저장 확인·복붙용
-   이어가기 프롬프트(```text 코드블럭)·경고가 모두 들어 있다 — 자유 서술로 다시 쓰지 않는다.
-   (`concurrent_conflict: true` 면 `report` 가 충돌 안내이고 resume 블록이 없다. 그대로 전달하고
-   두 최신본 중 어느 체인을 최신으로 할지 확인받는다.)
+5. **CLI 결과의 `report` 문자열을 한 글자도 바꾸지 말고 그대로 출력한다** — 저장 확인·복붙용
+   이어가기 프롬프트(```text 코드블럭)·경고가 모두 들어 있다, 자유 서술로 다시 쓰지 않는다.
+   `concurrent_conflict: true` 면 `report` 가 충돌 안내(resume 블록 없음)이니 그대로 전달하고
+   두 최신본 중 어느 체인을 최신으로 할지 확인받는다.
 
 ### 세션 없이 이어받기 체크리스트 (저장 전 필수)
 
-세션은 머신 간 동기화하지 않는다(2026-06-05 결정). 핸드오프 하나만 보고 다른 세션·다른 머신에서
-이어갈 수 있어야 한다. 저장 전 아래를 대화 맥락에서 **채우거나 — 없으면 사용자에게 묻는다**
-(빈칸 boilerplate 채우기 금지):
+세션은 머신 간 동기화하지 않는다(2026-06-05 결정) — 핸드오프 하나만 보고 다른 세션·다른
+머신에서 이어갈 수 있어야 한다. 저장 전 아래를 대화 맥락에서 **채우거나 — 없으면 사용자에게
+묻는다**(빈칸 boilerplate 채우기 금지):
 
-1. **현재 목표 + 왜 이 방향인지**(대안 대비) → `summary` + `## Decisions`
+1. **현재 목표** → `summary`; **왜 이 방향인지**(대안 대비, Chair 추론) → `## Unapproved Proposals`
 2. **완료 / 미완료** → `## Done` / `## Open`. 완료 항목은 가능한 한 **확인 증거**를 함께 적는다
-   (예: `— 확인: 테스트 통과`). 증거 없으면 Done 대신 Open/Not Tried 로.
-3. **다음 한 행동** → `## Exact Next Step` (구체적·즉시 실행 가능. 모호하면 묻기)
-4. **블로커** → `## Blockers And Questions` (없으면 "현재 블로커 없음.")
-5. **검증 상태** → `## Verification` (완료 항목을 **무엇으로** 확인했는지 명시 / 미검증)
-6. **관련 결정** → 장기 기억 도구에 기록했으면 `## Decisions` 에 포인터 명시
+   (예: `— 확인: 테스트 통과`) — 증거 없으면 Done 대신 Open/Not Tried 로.
+3. **다음 한 행동** → `## Exact Next Step`(구체적·즉시 실행 가능. 모호하면 묻기)
+4. **블로커** → `## Blockers And Questions`(없으면 "현재 블로커 없음.")
+5. **검증 상태** → `## Verification`(완료 항목을 **무엇으로** 확인했는지 명시 / 미검증)
+6. **관련 결정** → 장기 기억 도구에 기록했으면 `## Unapproved Proposals` 에 포인터와 근거 명시
 7. **유망하나 아직 안 해본 접근** → `## Not Tried Yet`
 
-**`summary` 한 줄은 항상 실질적으로 채운다.** 글로벌 CURRENT.md 인덱스가 `summary` +
-`## Exact Next Step`·`## Blockers And Questions` 의 첫 줄을 뽑아 "지금 뭐 / 다음 뭐 / 막힌 것"을
-보여준다 — 비면 인덱스가 "(요약 없음)" 으로 빈약해지고 다른 머신에서 상황 파악이 안 된다.
+### Decisions / Unapproved Proposals 규율
+
+1. `sections.decisions` 는 사용자 발화 원문 인용만. D-3 경계를 따른다.
+2. `sections.unapproved` 에 Chair 가 정한 것과 **근거**를 함께 적는다.
+3. `## Open` 각 항목에 **완료 조건**을 반증 가능한 문장으로. "즉시 적용한다" 류는 무효.
+4. 저장 전, 이번 대화에서 사용자가 답한 질문을 훑어 답이 `Decisions` 에 원문으로 들어갔는지 확인한다.
+5. **Resume 시 두 절을 반드시 읽고 보고에 반영한다** — `## Decisions` 는 사용자 확정 원문으로
+   그대로 존중하고, `## Unapproved Proposals` 는 미승인이므로 실행 전 사용자에게 확인한다.
+
+**`summary` 한 줄은 항상 실질적으로 채운다** — 글로벌 CURRENT.md 인덱스가 `summary` +
+`## Exact Next Step`·`## Blockers And Questions` 첫 줄을 뽑아 "지금 뭐/다음 뭐/막힌 것"을
+보여주므로, 비면 인덱스가 "(요약 없음)" 으로 빈약해져 다른 머신에서 상황 파악이 안 된다.
 
 ### 자동 토픽 결정 트리
 
@@ -131,7 +142,7 @@ CLI 결과의 `warnings` 배열을 **빠짐없이 사용자에게 보고**한다
 ### Body Template (CLI 가 조립, 어댑터는 섹션 내용 제공)
 
 CLI 가 frontmatter(topic/created/project_root/status/prev/source/git_branch/git_commit/
-git_dirty — 어댑터가 작성 안 함, CLI 가 실측해 생성)와 다음 10섹션을 조립한다. 어댑터는
+git_dirty — 어댑터가 작성 안 함, CLI 가 실측해 생성)와 다음 11섹션을 조립한다. 어댑터는
 각 섹션의 내용을 사용자의 언어로 채운다:
 
 ```markdown
@@ -143,6 +154,7 @@ git_dirty — 어댑터가 작성 안 함, CLI 가 실측해 생성)와 다음 1
 ## Git State          → (sections 아님 — CLI 가 git meta 로 자동 생성)
 ## Files Touched       → (sections 아님 — top-level files_touched 배열)
 ## Decisions          → sections.decisions
+## Unapproved Proposals → sections.unapproved
 ## Exact Next Step     → sections.exact_next_step
 ## Verification        → sections.verification
 ```
@@ -171,5 +183,5 @@ git_dirty — 어댑터가 작성 안 함, CLI 가 실측해 생성)와 다음 1
 
 이전 `~/.claude/handoffs/<topic>/` 본문은 소유 프로젝트가 명확할 때만 `<project-root>/.handoff/`로
 한 번 이전한다. 애매하면 원위치 보류·보고. 레거시 글로벌 `INDEX.md`는 이력으로 보존하되 정본으로
-쓰지 않는다. Codex-Claude 라운드의 `.handoff/round-N-*-contract.md`/`result.md`/`review.md`도
-같은 프로젝트 로컬 원칙을 따른다 — `/handoff` 기록은 이 산출물을 요약·참조할 수 있으나 대체하지 않는다.
+쓰지 않는다. 프로젝트가 `.handoff/` 에 두는 다른 산출물(설계·리뷰 기록 등)도 같은 프로젝트
+로컬 원칙을 따른다 — `/handoff` 기록은 그것들을 요약·참조할 수 있으나 대체하지 않는다.

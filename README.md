@@ -36,7 +36,7 @@ Python 3.10+ · 외부 의존성 없음(표준 라이브러리만).
 
 ## 저장하면 이렇게 나온다
 
-`/handoff save` 실행 시 어댑터가 대화에서 10섹션 narrative 를 뽑아 CLI 에 넘기고,
+`/handoff save` 실행 시 어댑터가 대화에서 11섹션 narrative 를 뽑아 CLI 에 넘기고,
 CLI 가 저장 후 아래 보고를 돌려준다(어댑터는 그대로 출력):
 
 ```text
@@ -51,10 +51,11 @@ CLI 가 저장 후 아래 보고를 돌려준다(어댑터는 그대로 출력):
     - 프로젝트: my-app  (저장 머신 경로: ~/projects/my-app)
     - 토픽: login-api
     - 직전 요약: JWT 로그인 API 구현 중 — 토큰 발급까지 완료, 쿠키 저장이 다음 단계.
+    - 범위 주의: 이 세션의 작업 대상은 이 프로젝트(my-app)의 토픽(login-api) 하나다. 세션 시작 시 주입된 다른 요약·기록은 프로젝트가 같아도(다른 토픽·다른 세션) 이 작업이 아니다 — 선택지로 제시하지 말고 무시한다. 대상 변경은 사용자가 명시적으로 지시할 때만 이뤄진다.
 
     먼저 이 프로젝트에서 `/handoff resume login-api` 를 실행해(또는 "핸드오프 login-api 이어받아줘")
-    최신 핸드오프를 로드하고, Done/Open/Decisions/Git State 와 git drift 를 확인한 뒤
-    "Exact Next Step" 부터 이어서 진행해줘. 작업 로그·보고는 사용자의 언어로.
+    최신 핸드오프를 로드하고, Done/Open/Decisions/Unapproved Proposals/Exact Next Step/Git State 와 git drift 를 확인한 뒤
+    네가 이해한 의도·목적·방법·스코프를 네 말로 설명해줘. 작업 로그·보고는 사용자의 언어로.
 ```
 
 저장된 정본(`.handoff/login-api/…md`)은 이렇게 생겼다:
@@ -85,7 +86,7 @@ git_dirty: false
 
 ## Exact Next Step
 login route 에서 cookies().set('token', jwt, httpOnly) 적용 후 Set-Cookie 헤더 확인.
-(… Failed Attempts / Blockers / Git State / Files Touched / Decisions / Verification)
+(… Failed Attempts / Blockers / Git State / Files Touched / Decisions / Unapproved Proposals / Verification)
 ```
 
 git 상태(branch·full SHA·dirty)는 어댑터가 아니라 **CLI 가 실측**해 기록하고, resume 시
@@ -108,11 +109,12 @@ git 상태(branch·full SHA·dirty)는 어댑터가 아니라 **CLI 가 실측**
 어댑터(Claude/Codex)는 직접 파일을 쓰지 않고 아래 CLI 에 위임한다.
 
 ```bash
-python -m handoff_cli --cwd <cwd> save           # JSON 페이로드를 stdin 으로
+python -m handoff_cli --cwd <cwd> save           # JSON 페이로드를 stdin 또는 --input <file>
 python -m handoff_cli --cwd <cwd> list [--all]   # --all 로 archived 포함
 python -m handoff_cli --cwd <cwd> find --keyword <k> [--global-scope <root>...]
 python -m handoff_cli --cwd <cwd> resume --topic <t>
 python -m handoff_cli --cwd <cwd> archive --topic <t>
+python -m handoff_cli --cwd <cwd> reindex        # 기존 상세 정본에서 집계 인덱스 백필
 ```
 
 `save` 는 저장 후 결과에 `report`(사용자에게 보여줄 완성 보고)와 `resume_prompt`(새 세션에
@@ -134,13 +136,13 @@ python -m handoff_cli --cwd <cwd> archive --topic <t>
   "sections": {
     "done": "...", "open": "...", "failed_attempts": "...",
     "not_tried": "...", "blockers": "...", "decisions": "...",
-    "exact_next_step": "...", "verification": "..."
+    "unapproved": "...", "exact_next_step": "...", "verification": "..."
   },
   "files_touched": [{"path": "...", "state": "complete|in-progress|broken|read-only", "note": "..."}]
 }
 ```
 
-CLI 가 수행하는 일: 프로젝트 루트 결정, git branch·commit·dirty 실측, 10섹션 본문 조립,
+CLI 가 수행하는 일: 프로젝트 루트 결정, git branch·commit·dirty 실측, 11섹션 본문 조립,
 원자적 쓰기(기존 본문 비파괴), `LATEST.md`/`INDEX.md`/`CURRENT.md` 재생성, secret redaction,
 크로스호스트 가드, git drift 비교.
 
@@ -150,23 +152,7 @@ CLI 가 수행하는 일: 프로젝트 루트 결정, git branch·commit·dirty 
 core/handoff_cli/      # 공용 실행가능 코어 (정본 로직)
 claude/handoff.md      # Claude Code /handoff 어댑터
 codex/handoff/         # Codex $handoff 어댑터 (SKILL.md + agents/openai.yaml)
-tests/                 # unittest 스위트
 ```
-
-## 테스트
-
-```bash
-python -m unittest discover -s tests -v
-```
-
-CI 는 ubuntu/windows/macos × Python 3.10/3.14 × 기본/`HANDOFF_LANG=en` 매트릭스로 돈다.
-`tests/test_11_adapters.py` 의 quick_validate 회귀는 `HANDOFF_QUICK_VALIDATE` 환경변수로
-검증기 경로를 지정했을 때만 실행되고, 없으면 skip 된다.
-
-## 기여 / 변경 이력
-
-- [CONTRIBUTING.md](CONTRIBUTING.md) — 테스트 실행법·PR 기대치
-- [CHANGELOG.md](CHANGELOG.md) — 버전별 변경 기록
 
 ## 라이선스
 

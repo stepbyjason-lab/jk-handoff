@@ -3,8 +3,8 @@
 모든 git 호출은 `run_git` 단일 경로를 거친다. `run_git` 은 네트워크 서브커맨드
 (fetch/pull/push 등)를 거부한다 — `/handoff` 는 네트워크를 일절 쓰지 않는다.
 시각은 `now_local()` 단일 경로로 실측하며, 테스트는 이 함수를 monkeypatch 해
-provenance 를 검증한다. 타임존은 시스템 로컬 — env·설정 불필요, `datetime.now().astimezone()`
-이 OS 로컬 오프셋을 자동으로 붙인다.
+provenance를 검증한다. 타임존은 시스템 로컬 — env·설정 불필요,
+`datetime.now().astimezone()` 이 OS 로컬 오프셋을 자동으로 붙인다.
 """
 
 from __future__ import annotations
@@ -32,7 +32,7 @@ __all__ = [
     "latest_project_mtime",
 ]
 
-# git 네트워크 서브커맨드 차단 목록 (producer 는 네트워크 없음).
+# git 네트워크 서브커맨드 차단 목록.
 # 원격 전송을 유발할 수 있는 저수준/우회 커맨드까지 포함.
 _NETWORK_GIT = {
     "fetch", "pull", "push", "clone", "remote", "ls-remote",
@@ -59,7 +59,8 @@ def now_local() -> datetime:
 def iso8601(dt: datetime) -> str:
     """full ISO 8601 + 로컬 오프셋 (`2026-06-05T22:51:00+09:00`). 초까지, 마이크로초 절삭.
 
-    `dt` 가 naive 면 로컬 타임존을 붙이고, aware 면 그 타임존 표현을 그대로 유지한다.
+    `dt` 가 naive 면 로컬 타임존을 붙이고, aware 면 그 타임존 표현을 그대로 유지한다
+    (기존 KST 고정 astimezone 강제를 제거 — 로컬 타임존 자체가 이제 가변이므로).
     """
     if dt.tzinfo is None:
         dt = dt.astimezone()
@@ -85,18 +86,18 @@ def _is_git_repo(root: str) -> bool:
 
 
 def resolve_root(cwd: str, explicit_root: str | None) -> str:
-    """저장/탐색 루트를 결정한다 (Project Root Resolution 규칙).
+    """저장/탐색 루트를 결정한다 (라이브 Project Root Resolution 보존).
 
     1. `--root` 가 있으면 그 절대경로.
     2. cwd 에 프로젝트 마커가 있으면 cwd.
     3. git toplevel 이 성공하면 그 루트.
     4. 둘 다 없으면 cwd.
-    상위 폴더로의 자동 승격은 하지 않는다 (Rule: 하위 프로젝트에서 상위 폴더로 승격 금지).
+    상위 폴더로의 자동 승격은 하지 않는다 (Rule: 하위에서 ~/projects 로 승격 금지).
     """
     if explicit_root:
         if "\x00" in explicit_root:
             raise ValueError("--root 에 null byte 가 있다.")
-        # 상위탈출 거부: 원시 입력에 `..` 경로 컴포넌트가 있으면 거부.
+        # 상위탈출 거부: 원시 입력에 `..` 경로 컴포넌트가 있으면 거부(test 13).
         # 정상 명시 루트(절대경로)는 `..` 가 없다.
         parts = re.split(r"[\\/]+", explicit_root)
         if ".." in parts:
@@ -141,7 +142,7 @@ def ensure_project_id(root: str) -> str:
 
 
 def project_id_uncommitted(root: str) -> bool:
-    """git 저장소에서 `.project-id` 가 아직 커밋 안 됨(untracked/staged-only)인지 여부.
+    """git 저장소에서 `.project-id` 가 아직 커밋 안 됨(untracked/staged-only)인지 (test 26).
 
     비-git 이면 False. **HEAD 에 커밋돼 있을 때만** False, 그 외(untracked·staged-only·
     아직 커밋 0개)는 True. `ls-files` 는 staged 도 추적으로 보므로 `ls-tree HEAD` 로

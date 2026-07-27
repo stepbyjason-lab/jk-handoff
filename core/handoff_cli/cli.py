@@ -19,7 +19,7 @@ _VALID_SOURCES = ("claude-code", "codex")
 
 _CANONICAL_SECTION_KEYS = (
     "done", "open", "failed_attempts", "not_tried",
-    "blockers", "decisions", "exact_next_step", "verification",
+    "blockers", "decisions", "unapproved", "exact_next_step", "verification",
 )
 
 # alias 테이블은 "정규화 규칙을 거쳐도 canonical 과 형태가 다른 것"만 담는다.
@@ -29,6 +29,7 @@ _CANONICAL_SECTION_KEYS = (
 _SECTION_KEY_ALIASES = {
     "not_tried_yet": "not_tried",
     "blockers_and_questions": "blockers",
+    "unapproved_proposals": "unapproved",
 }
 
 
@@ -74,7 +75,7 @@ def _normalize_section_key(raw_key: str) -> str | None:
 
 def _normalize_sections(raw_sections: object, warnings: list[str], lang: str) -> dict:
     """반환값은 canonical 키만 key 로 갖는 *부분* dict 다 — 매핑 안 된 canonical 은
-    key 자체가 없다(전체 8-key dict 로 미리 채우지 않는다). assemble_body() 의 기존
+    key 자체가 없다(전체 9-key dict 로 미리 채우지 않는다). assemble_body() 의 기존
     `sections.get('done')` 류 `.get()` 호출이 그대로 기본값 fallback 을 처리하므로
     이 반환 계약과 100% 호환된다. assemble_body() 시그니처·로직은 수정하지 않는다.
     """
@@ -125,6 +126,46 @@ def _normalize_sections(raw_sections: object, warnings: list[str], lang: str) ->
     return result
 
 
+def _cross_project_files(root: str, files_touched: object) -> list[str]:
+    """files_touched 중 프로젝트 루트 밖 경로를 찾아 정규화된 문자열 목록으로 반환한다.
+
+    결정적 판정: `~` 전개 → 상대경로는 root 기준 결합 → `.resolve()`(심볼릭 해소) →
+    `Path.is_relative_to(root.resolve())` 로 containment 판정(문자열 prefix 금지 —
+    형제 `<root>-old` 오판 방지). path 가 str 이 아니거나 결측/빈문자면 skip.
+
+    resolve() 실패(널바이트·overlong·심볼릭 루프 등)는 예외 종류(OSError·ValueError·
+    RuntimeError)를 불문하고 **원본 경로를 그대로 플래그**한다 — 위치 판정 불가는 '루트
+    안=안전'이 아니라 '의심'이므로 조용히 흘리지 않는다(fail toward warning). 이로써
+    지원 Python 범위(3.10+)에서 resolve 예외로 save 가 크래시하는 경로도 함께 봉쇄된다.
+
+    재개 컨텍스트 오염 방어의 보조 결정적 게이트다 — narrative(자유서술) 오염은 CLI 가
+    판정 불가라 어댑터 규칙이 정본이고, 이 함수는 결정적으로 판정 가능한 경로 표면만 맡는다.
+    """
+    if not isinstance(files_touched, list):
+        return []
+    root_resolved = Path(root).resolve()
+    out: list[str] = []
+    for entry in files_touched:
+        if not isinstance(entry, dict):
+            continue
+        path = entry.get("path")
+        if not isinstance(path, str) or not path.strip():
+            continue
+        expanded = os.path.expanduser(path)
+        candidate = Path(expanded)
+        if not candidate.is_absolute():
+            candidate = Path(root) / candidate
+        try:
+            resolved = candidate.resolve()
+        except (OSError, ValueError, RuntimeError):
+            # 판정 불가 → 안전으로 흘리지 않고 원본 경로를 플래그(크래시도 방지).
+            out.append(path)
+            continue
+        if not resolved.is_relative_to(root_resolved):
+            out.append(str(resolved))
+    return out
+
+
 def _resume_prompt(project_name: str, root: str, topic: str, summary: str, lang: str) -> str:
     """새 세션에 그대로 붙여넣어 이어가는 프롬프트. 결정적(같은 입력→바이트 동일).
 
@@ -143,6 +184,7 @@ def _resume_prompt(project_name: str, root: str, topic: str, summary: str, lang:
     if summary_line and summary_line != topic:
         lines.append(messages.msg("resume_summary_line", lang, summary_line=summary_line))
     lines += [
+        messages.msg("resume_scope_guard", lang, project_name=project_name, topic=topic),
         "",
         messages.msg("resume_tail1", lang, topic=topic),
         messages.msg("resume_tail2", lang),
@@ -222,6 +264,14 @@ def cmd_save(payload: dict, cwd: str, global_root: str | None = None) -> dict:
     if orphan:
         warnings.append(orphan)
 
+    cross_project = _cross_project_files(root, payload.get("files_touched", []))
+    if cross_project:
+        examples = cross_project[:5]
+        warnings.append(messages.msg(
+            "warn_cross_project_files", lang,
+            count=len(cross_project), paths=", ".join(examples),
+        ))
+
     meta = {
         "topic": topic,
         "created": created_iso,
@@ -248,7 +298,7 @@ def cmd_save(payload: dict, cwd: str, global_root: str | None = None) -> dict:
     if detail_path is None:
         raise FileExistsError("파일명 충돌이 반복됨 — 저장 중단.")
 
-    # 동시성: 본문 저장 사이 LATEST 가 바뀌었으면 포인터 갱신 중단.
+    # 동시성: 본문 저장 사이 LATEST 가 바뀌었으면 포인터 갱신 중단 (test 10).
     current_latest = latest_path.read_bytes() if latest_path.exists() else None
     if snapshot != current_latest:
         # 충돌 메시지는 _conflict_report 의 lead 문구가 전달하므로, report 의 ⚠경고 블록엔
@@ -270,7 +320,7 @@ def cmd_save(payload: dict, cwd: str, global_root: str | None = None) -> dict:
     detail.write_latest(tdir, filename, summary)
     detail.regenerate_index(root, lang)
 
-    # 글로벌 CURRENT.md — 분리 실패 경계: 실패해도 상세는 보존.
+    # 글로벌 CURRENT.md — 분리 실패 경계: 실패해도 상세는 보존 (test 25).
     global_info: dict = {"written": False, "skipped_reason": None}
     try:
         cur_meta = current.build_meta(root, git, created_iso)
@@ -328,7 +378,7 @@ def cmd_reindex(cwd: str, root: str | None = None, global_root: str | None = Non
     """기존 active 토픽만 스캔해 글로벌 CURRENT.md 만 백필한다.
 
     새 detail·LATEST·INDEX 를 쓰지 않는다(정본 read-only). `.project-id` 가 없으면
-    생성한다. 멱등(같은 입력 2회 → updated_at 외 바이트 동일). active 토픽이
+    생성. 멱등(같은 입력 2회 → updated_at 외 바이트 동일). active 토픽이
     없거나 `.handoff/` 가 없으면 글로벌을 만들지 않고 사유를 반환한다.
     """
     warnings: list[str] = []
@@ -470,7 +520,7 @@ def cmd_resume(cwd: str, topic: str, root: str | None = None) -> dict:
     if git["is_git"] and front.get("git_commit") and front["git_commit"] != "null":
         saved_commit = front.get("git_commit") or ""
         cur_commit = git["commit"] or ""
-        # 레거시 detail 은 short SHA 를 기록했다 — prefix 일치면 같은 커밋으로 본다
+        # 라이브 레거시는 short SHA 를 기록했다 — prefix 일치면 같은 커밋으로 본다
         # (그렇지 않으면 short vs full 이 항상 drift 로 오발).
         commit_same = bool(saved_commit) and bool(cur_commit) and (
             cur_commit.startswith(saved_commit) or saved_commit.startswith(cur_commit)
@@ -503,6 +553,7 @@ def cmd_resume(cwd: str, topic: str, root: str | None = None) -> dict:
         "git_drift": drift,
         "prev_chain": prev_chain,
         "body": body,
+        "scope_guard": messages.msg("resume_scope_guard", lang, project_name=name, topic=topic),
     })
 
 

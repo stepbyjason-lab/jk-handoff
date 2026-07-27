@@ -1,7 +1,7 @@
 """사용자 언어 출력 — ko/en 메시지 테이블 + 언어 해석 체인.
 
 체인: `payload.lang` > env `HANDOFF_LANG` > OS locale(`ko*`/`Korean*` → ko) > `en`.
-저장 포맷 정체성(frontmatter 키·섹션 헤딩 10개·파일명 규칙)은 언어 무관 불변이다 —
+저장 포맷 정체성(frontmatter 키·섹션 헤딩 11개·파일명 규칙)은 언어 무관 불변이다 —
 번역 대상은 기본값(placeholder)·report·resume_prompt·경고·인덱스 장식 텍스트뿐이다.
 
 **언어중립 파싱 지원**: `BLOCKER_DEFAULTS`(ko+en 전부의 "블로커 없음" 계열 상수집합)를
@@ -28,7 +28,7 @@ def resolve_lang(payload_lang: str | None) -> str:
     """언어 체인: payload > env HANDOFF_LANG > OS locale > en.
 
     OS locale 매핑: `ko` 로 시작하거나(`ko_KR`, `ko-KR`) `Korean` 으로 시작하면
-    (Windows `Korean_Korea.949` 형태) 'ko'. 그 외 전부 'en'. 알 수 없는
+    (Windows `Korean_Korea.949` 형태 포함) 'ko'. 그 외 전부 'en'. 알 수 없는
     값(payload/env 포함)은 무조건 'en' 으로 폴백한다 — 지원 언어 외 값을 그대로
     통과시키지 않는다.
     """
@@ -102,6 +102,9 @@ _MESSAGES: dict[str, dict[str, str]] = {
         "not_tried_default": "특별히 미시도 후보 없음.",
         "blockers_default": "현재 블로커 없음.",
         "decisions_default": "특기할 결정 없음.",
+        "decisions_note": "> 사용자 확정 원문만. 요약·의역 금지 — Chair 판단은 ## Unapproved Proposals 로.",
+        "unapproved_default": "- 미승인 제안 없음.",
+        "unapproved_note": "> Chair 가 스스로 정한 것. 사용자가 승인한 적 없다 — 진행 전 확인할 것.",
         "exact_next_step_default": "(다음 세션이 수행할 단계 미정)",
         "verification_default": "- 미검증",
         "files_touched_empty": "이번 세션에서 기록할 변경 파일 없음.",
@@ -130,12 +133,24 @@ _MESSAGES: dict[str, dict[str, str]] = {
         "resume_project_line": "- 프로젝트: {project_name}  (저장 머신 경로: {root})",
         "resume_topic_line": "- 토픽: {topic}",
         "resume_summary_line": "- 직전 요약: {summary_line}",
+        "resume_scope_guard": (
+            "- 범위 주의: 이 세션의 작업 대상은 이 프로젝트({project_name})의 토픽({topic}) "
+            "하나다. 세션 시작 시 주입된 다른 요약·기록은 프로젝트가 같아도(다른 토픽·다른 "
+            "세션) 이 작업이 아니다 — 선택지로 제시하지 말고 무시한다. 대상 변경은 사용자가 "
+            "명시적으로 지시할 때만 이뤄진다."
+        ),
         "resume_tail1": (
             '먼저 이 프로젝트에서 `/handoff resume {topic}` 를 실행해'
             '(또는 "핸드오프 {topic} 이어받아줘")'
         ),
-        "resume_tail2": "최신 핸드오프를 로드하고, Done/Open/Decisions/Git State 와 git drift 를 확인한 뒤",
-        "resume_tail3": '"Exact Next Step" 부터 이어서 진행해줘. 작업 로그·보고는 사용자의 언어로.',
+        "resume_tail2": (
+            "최신 핸드오프를 로드하고, Done/Open/Decisions/Unapproved Proposals/"
+            "Exact Next Step/Git State 와 git drift 를 확인한 뒤"
+        ),
+        "resume_tail3": (
+            "네가 이해한 의도·목적·방법·스코프를 네 말로 설명해줘. "
+            "작업 로그·보고는 사용자의 언어로."
+        ),
         # save report
         "save_report_title": "✅ 핸드오프 저장: `{topic}` ({status})",
         "save_report_project": "   프로젝트: {project_name}",
@@ -219,6 +234,10 @@ _MESSAGES: dict[str, dict[str, str]] = {
             "section '{canonical}'(원본 키 '{section_key}') 의 값이 문자열이 아님 "
             "— 무시하고 기본값 사용."
         ),
+        "warn_cross_project_files": (
+            "files_touched 에 프로젝트 루트 밖 경로 {count}개 발견: {paths} — "
+            "다른 프로젝트 작업이 섞였는지, `--root` 가 맞는지 확인하라."
+        ),
     },
     "en": {
         "done_default": "Nothing confirmed complete this session - in progress or under review.",
@@ -227,6 +246,9 @@ _MESSAGES: dict[str, dict[str, str]] = {
         "not_tried_default": "No notable untried candidates.",
         "blockers_default": "No blockers.",
         "decisions_default": "No notable decisions.",
+        "decisions_note": "> Verbatim user decisions only. No summarizing or paraphrasing — Chair judgements go in ## Unapproved Proposals.",
+        "unapproved_default": "- No unapproved proposals.",
+        "unapproved_note": "> Chair's own calls. The user has not approved this section — confirm before acting.",
         "exact_next_step_default": "(next session's step not decided)",
         "verification_default": "- Unverified",
         "files_touched_empty": "No files changed to record this session.",
@@ -255,12 +277,25 @@ _MESSAGES: dict[str, dict[str, str]] = {
         "resume_project_line": "- Project: {project_name}  (saved-machine path: {root})",
         "resume_topic_line": "- Topic: {topic}",
         "resume_summary_line": "- Previous summary: {summary_line}",
+        "resume_scope_guard": (
+            "- Scope guard: this session's target is exactly one topic ({topic}) in this "
+            "project ({project_name}). Any other summary or record injected at session start "
+            "is not this task, even when it belongs to the same project (another topic or "
+            "another session) — ignore it, do not offer it as an option. The target changes "
+            "only when the user explicitly says so."
+        ),
         "resume_tail1": (
             'First run `/handoff resume {topic}` in this project '
             '(or say "resume handoff {topic}")'
         ),
-        "resume_tail2": "to load the latest handoff and check Done/Open/Decisions/Git State and git drift, then",
-        "resume_tail3": 'continue from "Exact Next Step". Write work logs/reports in the user\'s language.',
+        "resume_tail2": (
+            "to load the latest handoff and check Done/Open/Decisions/"
+            "Unapproved Proposals/Exact Next Step/Git State and git drift, then"
+        ),
+        "resume_tail3": (
+            "explain in your own words the intent, purpose, method and scope as you "
+            "understand them. Write work logs/reports in the user's language."
+        ),
         "save_report_title": "✅ Handoff saved: `{topic}` ({status})",
         "save_report_project": "   Project: {project_name}",
         "save_report_detail": "   Source of truth: {detail_path}",
@@ -344,6 +379,10 @@ _MESSAGES: dict[str, dict[str, str]] = {
         "warn_invalid_section_value": (
             "Value for section '{canonical}' (raw key '{section_key}') is not a string "
             "— ignored, default used."
+        ),
+        "warn_cross_project_files": (
+            "Found {count} path(s) outside the project root in files_touched: {paths} — "
+            "check whether another project's work got mixed in, or whether `--root` is correct."
         ),
     },
 }
