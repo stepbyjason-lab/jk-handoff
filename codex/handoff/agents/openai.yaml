@@ -5,5 +5,7 @@ summary: 2-tier 세션 핸드오프 — 프로젝트 .handoff/ 상세 정본 + w
 entrypoint: SKILL.md
 shared_core: ../../core/handoff_cli
 notes: |
-  Claude /handoff 어댑터와 같은 CLI 를 공유한다. 두 어댑터의 on-disk 출력은 바이트 동일.
+  Claude /handoff 어댑터와 같은 CLI 를 공유한다. `source:` frontmatter 줄과 narrative 를 뺀
+  on-disk 구조·순서·헤딩은 동일하다. `source:` 줄만 writer 에 따라 다르며, 어느 writer 의
+  산출물이든 타 writer 가 이어갈 수 있다.
   네트워크 연산 없음(fetch/pull/push 금지). writer-local 인덱스는 파생물.

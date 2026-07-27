@@ -2,8 +2,8 @@
 
 여러 세션·여러 머신을 오가며 작업을 인계하는 **2-tier 세션 핸드오프 CLI**.
 Claude Code 의 `/handoff` 명령과 Codex 의 `$handoff` 스킬이 **같은 실행가능 Python 코어**를
-공유한다. 두 어댑터의 on-disk 출력은 바이트 동일하므로, 어느 도구로 저장했든 다른 도구가
-그대로 목록·검색·재개할 수 있다.
+공유한다. `source:` frontmatter 줄만 writer 에 따라 다르고 on-disk 구조·순서·헤딩은 동일해서,
+어느 도구로 저장했든 다른 도구가 그대로 목록·검색·재개할 수 있다.
 
 > A shared session-handoff CLI for AI coding agents. The Claude `/handoff`
 > command and the Codex `$handoff` skill both drive the same `handoff_cli`
