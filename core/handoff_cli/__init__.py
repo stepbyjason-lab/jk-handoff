@@ -7,4 +7,4 @@ LATEST.md · INDEX.md · 글로벌 CURRENT.md 의 모든 파일쓰기는 이 패
 
 __all__ = ["__version__"]
 
-__version__ = "0.2.7"
+__version__ = "0.2.8"

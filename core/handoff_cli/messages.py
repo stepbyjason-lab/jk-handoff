@@ -149,10 +149,12 @@ _MESSAGES: dict[str, dict[str, str]] = {
             "(무엇을 누구에게 위임할지)을 확인한 뒤"
         ),
         "resume_tail3": (
-            "네가 이해한 의도·목적·방법·스코프를 네 말로 설명해줘 — 방법에는 모델 라우팅에 "
-            "따른 위임 계획을 포함하고, 리뷰를 판정하다가 네가 '위반·scope 밖·무한확장'이라는 "
-            "판단을 적는 순간 다음 이터레이션을 열지 않고 그 리뷰를 멈춰 보고한다는 개입 "
-            "규칙을 한 줄로 복명해줘. 작업 로그·보고는 사용자의 언어로."
+            "네가 이해한 의도·목적·방법·스코프를 네 말로 설명해줘 — 방법에는 잡무 위임 "
+            "계획을 포함해줘: 이 작업에서 생길 잡무(단순 실행·조회, 추론 섞인 소작업)를 "
+            "열거하고 모델 라우팅대로 각각 누구에게 보낼지. 그리고 리뷰를 판정하다가 네가 "
+            "'위반·scope 밖·무한확장'이라는 판단을 적는 순간 다음 이터레이션을 열지 않고 "
+            "그 리뷰를 멈춰 보고한다는 개입 규칙을 한 줄로 복명해줘. 작업 로그·보고는 "
+            "사용자의 언어로."
         ),
         # save report
         "save_report_title": "✅ 핸드오프 저장: `{topic}` ({status})",
@@ -298,12 +300,13 @@ _MESSAGES: dict[str, dict[str, str]] = {
         ),
         "resume_tail3": (
             "explain in your own words the intent, purpose, method and scope as you "
-            "understand them — include a delegation plan per the model-routing rules, "
-            "and restate in one line the intervention rule: while adjudicating a "
-            "review, the moment you write down that it violates a rule, is out of "
-            "scope, or is runaway expansion, you stop that review without opening "
-            "another iteration and report. Write work logs/reports in the user's "
-            "language."
+            "understand them — include a chore-delegation plan: list the chores this "
+            "work will produce (simple execution/lookups, small reasoning tasks) and "
+            "who each one goes to per the model-routing rules. Then restate in one "
+            "line the intervention rule: while adjudicating a review, the moment you "
+            "write down that it violates a rule, is out of scope, or is runaway "
+            "expansion, you stop that review without opening another iteration and "
+            "report. Write work logs/reports in the user's language."
         ),
         "save_report_title": "✅ Handoff saved: `{topic}` ({status})",
         "save_report_project": "   Project: {project_name}",
