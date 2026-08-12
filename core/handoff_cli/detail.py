@@ -252,6 +252,11 @@ class TopicSummary:
 def _read_topic_summary(root: str, tdir: Path, archived: bool, lang: str = "ko") -> TopicSummary | None:
     if not tdir.is_dir():
         return None
+    # `.handoff/` 아래에는 토픽 외에도 round evidence·brief·artifact bundle 디렉터리가
+    # 함께 존재할 수 있다. 토픽의 정식 진입점은 LATEST.md 이므로, 그것이 없는 디렉터리를
+    # status=active·요약 없음인 가짜 토픽으로 INDEX/CURRENT에 올리지 않는다.
+    if not (tdir / "LATEST.md").is_file():
+        return None
     target = read_latest_target(tdir)
     detail_text = ""
     raw_status = None
