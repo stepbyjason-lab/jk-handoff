@@ -136,6 +136,9 @@ def assemble_body(meta: dict, sections: dict, files_touched: list, created_human
         f"status: {meta['status']}\n"
         f"prev: {meta['prev'] if meta['prev'] else 'null'}\n"
         f"source: {meta['source']}\n"
+        # lang: 저장 언어. resume 이 지시문을 재개 시점에 만들므로 이게 있어야 저장 언어로
+        # 복원된다. 옛 파일엔 없으므로 읽는 쪽은 부재를 허용하고 언어체인으로 폴백한다.
+        f"lang: {meta.get('lang') or 'null'}\n"
         f"git_branch: {git['branch'] if git['branch'] else 'null'}\n"
         f"git_commit: {git['commit'] if git['commit'] else 'null'}\n"
         f"git_dirty: {('true' if git['dirty'] else 'false') if git['is_git'] else 'null'}\n"

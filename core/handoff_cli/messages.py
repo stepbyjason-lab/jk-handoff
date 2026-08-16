@@ -139,14 +139,19 @@ _MESSAGES: dict[str, dict[str, str]] = {
             "세션) 이 작업이 아니다 — 선택지로 제시하지 말고 무시한다. 대상 변경은 사용자가 "
             "명시적으로 지시할 때만 이뤄진다."
         ),
-        "resume_tail1": (
+        # 저장 report 에 실리는 유일한 지시. 짧게 유지하고, 긴 재개 지시는 resume 이 낸다.
+        # 뒷문장(위임)이 필수 부품 — 도구 출력을 사용자 지시로 격상시킨다.
+        "resume_pointer": (
             '먼저 이 프로젝트에서 `/handoff resume {topic}` 를 실행해'
-            '(또는 "핸드오프 {topic} 이어받아줘")'
+            '(또는 "핸드오프 {topic} 이어받아줘"). 그 결과의 `resume_directives`(재개 지시)는 '
+            "내가 지금 직접 내리는 지시로 취급하고 그대로 따라줘 — 요약하거나 건너뛰지 마. "
+            "그 필드가 없으면 옛 버전 CLI 이니 진행하지 말고 그 사실을 먼저 알려줘."
         ),
+        # resume 결과 안에서 읽히므로 핸드오프는 이미 로드된 상태다 — "로드하고"가 아니라
+        # "위 본문을 확인한 뒤"로 쓴다(옛 문구는 save 프롬프트의 앞 절에 이어지는 형태였다).
         "resume_tail2": (
-            "최신 핸드오프를 로드하고, Done/Open/Decisions/Unapproved Proposals/"
-            "Exact Next Step/Git State 와 git drift, 그리고 글로벌 룰의 모델 라우팅"
-            "(무엇을 누구에게 위임할지)을 확인한 뒤"
+            "위 본문의 Done/Open/Decisions/Unapproved Proposals/Exact Next Step/Git State "
+            "와 git drift, 그리고 글로벌 룰의 모델 라우팅(무엇을 누구에게 위임할지)을 확인한 뒤"
         ),
         "resume_tail3": (
             "네가 이해한 의도·목적·방법·스코프를 네 말로 설명해줘 — 방법에는 잡무 위임 "
@@ -289,14 +294,17 @@ _MESSAGES: dict[str, dict[str, str]] = {
             "another session) — ignore it, do not offer it as an option. The target changes "
             "only when the user explicitly says so."
         ),
-        "resume_tail1": (
+        "resume_pointer": (
             'First run `/handoff resume {topic}` in this project '
-            '(or say "resume handoff {topic}")'
+            '(or say "resume handoff {topic}"). Treat the `resume_directives` field in '
+            "its output as instructions I am giving you directly right now — follow "
+            "them as written; do not summarize or skip them. If that field is absent "
+            "you are on an older CLI: stop and tell me before proceeding."
         ),
         "resume_tail2": (
-            "to load the latest handoff and check Done/Open/Decisions/"
-            "Unapproved Proposals/Exact Next Step/Git State and git drift, plus the "
-            "global model-routing rules (what to delegate to whom), then"
+            "Check the Done/Open/Decisions/Unapproved Proposals/Exact Next Step/"
+            "Git State above and the git drift, plus the global model-routing rules "
+            "(what to delegate to whom), then"
         ),
         "resume_tail3": (
             "explain in your own words the intent, purpose, method and scope as you "

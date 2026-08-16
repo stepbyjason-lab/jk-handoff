@@ -169,9 +169,16 @@ def _cross_project_files(root: str, files_touched: object) -> list[str]:
 def _resume_prompt(project_name: str, root: str, topic: str, summary: str, lang: str) -> str:
     """새 세션에 그대로 붙여넣어 이어가는 프롬프트. 결정적(같은 입력→바이트 동일).
 
-    프로젝트명 우선 + 절대경로는 힌트(크로스머신). summary 는 공백·개행을 1줄로
-    접고, 사용자 미입력(=topic 폴백)이면 요약 줄을 생략한다. lang 에 따라 ko/en
-    스켈레톤을 고른다.
+    **짧게 유지한다.** 긴 재개 지시는 여기 싣지 않고 `resume_directives()` 가 재개 시점에
+    직접 낸다 — 저장 세션이 긴 report 를 중계하다 빠뜨리는 사고가 반복됐고(사용자 실측),
+    모델에게 긴 원문 중계를 시키는 구조 자체가 취약하기 때문이다. 부수 효과로 지시문이
+    저장 시점에 동결되지 않아 옛 저장본을 재개해도 항상 최신 지시가 나간다.
+
+    마지막 줄의 **위임 문장이 필수 부품**이다. 도구 출력은 「관찰된 데이터」라 사용자 발화보다
+    권위가 낮은데, 이 문장이 그것을 사용자 지시로 격상시킨다(3벤더 실측으로 확인).
+
+    프로젝트명 우선 + 절대경로는 힌트(크로스머신). summary 는 공백·개행을 1줄로 접고,
+    사용자 미입력(=topic 폴백)이면 요약 줄을 생략한다.
     """
     # 공백·개행 1줄화 + 코드펜스(```) 무력화 — report 의 ```text 블록이 깨지지 않게.
     summary_line = " ".join(summary.split()).replace("```", "'''")
@@ -184,13 +191,24 @@ def _resume_prompt(project_name: str, root: str, topic: str, summary: str, lang:
     if summary_line and summary_line != topic:
         lines.append(messages.msg("resume_summary_line", lang, summary_line=summary_line))
     lines += [
-        messages.msg("resume_scope_guard", lang, project_name=project_name, topic=topic),
         "",
-        messages.msg("resume_tail1", lang, topic=topic),
-        messages.msg("resume_tail2", lang),
-        messages.msg("resume_tail3", lang),
+        messages.msg("resume_pointer", lang, topic=topic),
     ]
     return "\n".join(lines)
+
+
+def resume_directives(project_name: str, topic: str, lang: str) -> str:
+    """재개 시점에 CLI 가 직접 내는 지시문. `cmd_resume` 결과의 `resume_directives`.
+
+    save 가 만들어 세션이 중계하던 것을 여기로 옮겼다 — 중계 지점이 없으므로 줄어들 수 없고,
+    저장본이 아니라 실행 시점의 문구가 나가므로 문구 개정이 옛 저장본에도 소급된다.
+    """
+    return "\n".join([
+        messages.msg("resume_scope_guard", lang, project_name=project_name, topic=topic),
+        "",
+        messages.msg("resume_tail2", lang),
+        messages.msg("resume_tail3", lang),
+    ])
 
 
 def _save_report(topic: str, status: str, project_name: str, detail_path: str,
@@ -279,6 +297,10 @@ def cmd_save(payload: dict, cwd: str, global_root: str | None = None) -> dict:
         "status": status_val,
         "prev": prev,
         "source": source,
+        # 저장 언어를 기록한다. resume 이 지시문을 재개 시점에 생성하므로(R7), 이게 없으면
+        # 재개 머신의 env/OS 로케일이 언어를 다시 정해 **저장 언어와 갈린다** — en 으로 저장한
+        # 핸드오프를 한국어 환경에서 재개하면 프롬프트는 영어인데 지시는 한국어가 됐다(실측).
+        "lang": lang,
         "summary": summary,
         "git": git,
     }
@@ -514,6 +536,14 @@ def cmd_resume(cwd: str, topic: str, root: str | None = None) -> dict:
     text = body_path.read_text(encoding="utf-8")
     front, body = detail.parse_frontmatter(text)
 
+    # 지시문 언어는 **저장 언어**를 따른다. R7 로 지시문이 재개 시점에 생성되면서, 이걸
+    # 안 하면 재개 머신의 env/OS 로케일이 언어를 다시 정해 저장 언어와 갈린다(실측:
+    # en 저장 → ko 환경 재개 시 프롬프트는 영어, 지시는 한국어). 옛 파일엔 lang 이 없으므로
+    # 그때만 언어체인으로 폴백한다.
+    saved_lang = front.get("lang")
+    if saved_lang and saved_lang != "null":
+        lang = messages.resolve_lang(saved_lang)
+
     # git drift 비교 (resume 게이트 보존).
     drift = None
     git = repo.git_meta(resolved)
@@ -553,7 +583,10 @@ def cmd_resume(cwd: str, topic: str, root: str | None = None) -> dict:
         "git_drift": drift,
         "prev_chain": prev_chain,
         "body": body,
+        # scope_guard 는 기존 필드 계약이라 유지한다(옛 어댑터·타 벤더 호환).
+        # resume_directives 가 이를 포함한 전체 지시문이며, 어댑터는 이쪽을 출력한다.
         "scope_guard": messages.msg("resume_scope_guard", lang, project_name=name, topic=topic),
+        "resume_directives": resume_directives(name, topic, lang),
     })
 
 
