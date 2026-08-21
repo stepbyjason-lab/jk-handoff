@@ -13,7 +13,7 @@ from __future__ import annotations
 import os
 import tempfile
 
-__all__ = ["atomic_write_text"]
+__all__ = ["atomic_write_text", "atomic_write_bytes"]
 
 
 def atomic_write_text(path: str, text: str, encoding: str = "utf-8") -> None:
@@ -34,6 +34,29 @@ def atomic_write_text(path: str, text: str, encoding: str = "utf-8") -> None:
         os.replace(tmp, path)
     except BaseException:
         # 교체 실패 시 임시파일을 남기지 않는다 (테스트 20: temp 잔존 금지).
+        try:
+            os.remove(tmp)
+        except OSError:
+            pass
+        raise
+
+
+def atomic_write_bytes(path: str, data: bytes) -> None:
+    """`data`를 `path`에 원자적으로 쓴다.
+
+    사용자 소유 구간처럼 개행·BOM을 포함한 기존 바이트를 보존해야 하는 좁은 수정 경계가
+    있어, 텍스트 경로와 같은 replace 보장을 bytes에도 제공한다.
+    """
+    directory = os.path.dirname(os.path.abspath(path))
+    os.makedirs(directory, exist_ok=True)
+    fd, tmp = tempfile.mkstemp(dir=directory, prefix=".handoff-tmp-", suffix=".part")
+    try:
+        with os.fdopen(fd, "wb") as handle:
+            handle.write(data)
+            handle.flush()
+            os.fsync(handle.fileno())
+        os.replace(tmp, path)
+    except BaseException:
         try:
             os.remove(tmp)
         except OSError:

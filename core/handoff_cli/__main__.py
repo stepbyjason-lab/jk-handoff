@@ -81,10 +81,43 @@ def main(argv=None) -> int:
     p_resume = sub.add_parser("resume")
     p_resume.add_argument("--root", default=None)
     p_resume.add_argument("--topic", required=True)
+    # JSON 안에 3만 자 문자열이 들어 있으면 어댑터가 파일로 빼서 나눠 읽느라
+    # 도구 호출이 5~7회로 불어난다(실측). 평문으로 내면 1회다.
+    p_resume.add_argument("--directives-only", action="store_true",
+                          help="resume_directives 만 평문으로 출력")
 
     p_arch = sub.add_parser("archive")
     p_arch.add_argument("--root", default=None)
     p_arch.add_argument("--topic", required=True)
+
+    # 결정 색인 — `<id>` 하나로 그 결정의 일생(생사·관계·체인)을 낸다.
+    p_dec = sub.add_parser("decisions")
+    p_dec.add_argument("--root", default=None)
+    p_dec.add_argument("--id", default=None, help="이 결정의 일생만 (생략하면 전부)")
+    p_dec.add_argument("--all", action="store_true", help="archived 토픽도 포함")
+
+    # 부정 색인 — 실패·폐기·죽은 결정만. 「이거 해봤나?」 에 답한다.
+    p_neg = sub.add_parser("negative")
+    p_neg.add_argument("--root", default=None)
+    p_neg.add_argument("--all", action="store_true", help="archived 토픽도 포함")
+
+    p_utt = sub.add_parser("utterances")
+    p_utt.add_argument("--root", default=None)
+    p_utt.add_argument("--session", required=True, help="저작 세션 id")
+    p_utt.add_argument("--transcript", default=None, help="트랜스크립트 경로(정본). 없으면 유도")
+    p_utt.add_argument("--topic", default=None,
+                       help="주면 그 토픽의 직전 저장본 이후만 (한 세션 두 번째 저장)")
+    p_utt.add_argument("--since", default=None, help="ISO8601. --topic 유도보다 우선")
+    # 범위를 사용자가 못박는다. 플래그가 있으면 기존 저장본이 있든 없든 그대로 실행한다 —
+    # 「중복인가」를 모델이 추론하다 저장을 거부한 사고가 있었다(2026-08-17).
+    g_scope = p_utt.add_mutually_exclusive_group()
+    g_scope.add_argument("--delta", dest="scope", action="store_const", const="delta",
+                         help="직전 저장 이후만. 직전 저장이 다른 세션이어도 강제한다")
+    g_scope.add_argument("--full", dest="scope", action="store_const", const="full",
+                         help="세션 전체. 직전 저장이 있어도 무시하고 1번부터 다시 센다")
+    p_utt.set_defaults(scope="auto")
+    p_utt.add_argument("--format", dest="fmt", choices=("claude", "codex"), default="claude",
+                       help="트랜스크립트 형식. 어댑터가 명시한다(코어가 추측하지 않는다)")
 
     p_reindex = sub.add_parser("reindex")
     p_reindex.add_argument("--root", default=None)
@@ -102,8 +135,19 @@ def main(argv=None) -> int:
         result = cli.cmd_find(cwd, args.keyword, args.root, args.global_scope)
     elif args.command == "resume":
         result = cli.cmd_resume(cwd, args.topic, args.root)
+        if getattr(args, "directives_only", False):
+            print(result.get("resume_directives") or "")
+            return 0
     elif args.command == "archive":
         result = cli.cmd_archive(cwd, args.topic, args.root)
+    elif args.command == "decisions":
+        result = cli.cmd_decisions(cwd, args.root, args.id, include_archived=args.all)
+    elif args.command == "negative":
+        result = cli.cmd_negative(cwd, args.root, include_archived=args.all)
+    elif args.command == "utterances":
+        result = cli.cmd_utterances(cwd, args.session, args.root, args.transcript,
+                                    topic=args.topic, since=args.since, fmt=args.fmt,
+                                    scope=args.scope)
     elif args.command == "reindex":
         result = cli.cmd_reindex(cwd, args.root, args.global_root, args.source)
     else:  # pragma: no cover

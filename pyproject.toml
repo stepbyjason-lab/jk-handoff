@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "jk-handoff"
-version = "0.3.0"
+version = "0.4.0"
 description = "2-tier 세션 핸드오프 공용 CLI — Claude /handoff 와 Codex $handoff 가 공유하는 단일 실행가능 코어"
 readme = "README.md"
 requires-python = ">=3.10"

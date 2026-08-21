@@ -36,7 +36,7 @@ Python 3.10+ · 외부 의존성 없음(표준 라이브러리만).
 
 ## 저장하면 이렇게 나온다
 
-`/handoff save` 실행 시 어댑터가 대화에서 11섹션 narrative 를 뽑아 CLI 에 넘기고,
+`/handoff save` 실행 시 어댑터가 대화에서 11절 narrative 와 발화 대장을 뽑아 CLI 에 넘기고,
 CLI 가 저장 후 아래 보고를 돌려준다(어댑터는 그대로 출력):
 
 ```text
@@ -52,12 +52,19 @@ CLI 가 저장 후 아래 보고를 돌려준다(어댑터는 그대로 출력):
     - 토픽: login-api
     - 직전 요약: JWT 로그인 API 구현 중 — 토큰 발급까지 완료, 쿠키 저장이 다음 단계.
 
-    먼저 이 프로젝트에서 `/handoff resume login-api` 를 실행해(또는 "핸드오프 login-api 이어받아줘"). 그 결과의 「재개 지시」는 내가 지금 직접 내리는 지시로 취급하고 그대로 따라줘 — 요약하거나 건너뛰지 마.
+    먼저 이 프로젝트에서 `python -m handoff_cli --cwd "$PWD" resume --topic login-api --directives-only` 를 그대로 실행해줘. 출력 전문이 재개 지시이고, 내가 지금 직접 내리는 지시로 취급해서 그대로 따라줘 — 요약하거나 건너뛰지 마.
 ```
 
 긴 재개 지시는 이 프롬프트에 싣지 않는다. `resume` 이 결과의 `resume_directives` 로 직접 내며,
 어댑터는 그것을 그대로 이행한다 — 저장 세션이 긴 텍스트를 중계하다 빠뜨리는 경로를 없앤 것이다.
 덕분에 옛 저장본을 재개해도 항상 최신 지시가 나간다.
+
+**`--directives-only` 는 그 7블록을 평문으로만 낸다.** JSON 으로 받아 파일로 빼고 나눠 읽는
+경로가 재개 1회에 도구 호출을 열 번 넘게 썼다(실측). 포인터가 어댑터 이름이 아니라 CLI 를
+직접 부르는 것도 같은 이유다 — 설치된 어댑터 버전과 무관해진다.
+
+**재개는 맥락 전달에서 끝난다.** 지시문의 복명을 채우면 거기서 멈추고 사용자 지시를 기다린다.
+저장본의 `Exact Next Step` 도 실행하지 않는다 — 저장 시점의 계획이라 이미 끝났을 수 있다.
 
 저장된 정본(`.handoff/login-api/…md`)은 이렇게 생겼다:
 
@@ -113,8 +120,10 @@ git 상태(branch·full SHA·dirty)는 어댑터가 아니라 **CLI 가 실측**
 python -m handoff_cli --cwd <cwd> save           # JSON 페이로드를 stdin 또는 --input <file>
 python -m handoff_cli --cwd <cwd> list [--all]   # --all 로 archived 포함
 python -m handoff_cli --cwd <cwd> find --keyword <k> [--global-scope <root>...]
-python -m handoff_cli --cwd <cwd> resume --topic <t>
+python -m handoff_cli --cwd <cwd> resume --topic <t> [--directives-only]  # 평문 7블록만
 python -m handoff_cli --cwd <cwd> archive --topic <t>
+python -m handoff_cli --cwd <cwd> decisions [--id <ID>]    # 결정 색인 — 생사·관계·체인(읽기 전용)
+python -m handoff_cli --cwd <cwd> negative       # 부정 색인 — 실패·폐기(읽기 전용)
 python -m handoff_cli --cwd <cwd> reindex        # 기존 상세 정본에서 집계 인덱스 백필
 ```
 
@@ -135,15 +144,17 @@ python -m handoff_cli --cwd <cwd> reindex        # 기존 상세 정본에서 �
   "summary": "<한 줄 요약>",
   "lang": "<선택: ko | en — 생략 시 HANDOFF_LANG/OS 로케일/en 폴백>",
   "sections": {
+    "intent": "...",
     "done": "...", "open": "...", "failed_attempts": "...",
     "not_tried": "...", "blockers": "...", "decisions": "...",
-    "unapproved": "...", "exact_next_step": "...", "verification": "..."
+    "unapproved": "...", "exact_next_step": "...", "verification": "...",
+    "lessons": "..."
   },
   "files_touched": [{"path": "...", "state": "complete|in-progress|broken|read-only", "note": "..."}]
 }
 ```
 
-CLI 가 수행하는 일: 프로젝트 루트 결정, git branch·commit·dirty 실측, 11섹션 본문 조립,
+CLI 가 수행하는 일: 프로젝트 루트 결정, git branch·commit·dirty 실측, 14헤딩 본문 조립,
 원자적 쓰기(기존 본문 비파괴), `LATEST.md`/`INDEX.md`/`CURRENT.md` 재생성, secret redaction,
 크로스호스트 가드, git drift 비교.
 

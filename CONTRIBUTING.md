@@ -14,7 +14,7 @@ python -m pip install -e .
 python .github/smoke.py
 ```
 
-스모크는 CLI 를 실제 서브프로세스로 불러 `save` → 본문 11섹션 조립 → `resume` → `list`
+스모크는 CLI 를 실제 서브프로세스로 불러 `save` → 본문 14헤딩 조립 → `resume` → `list`
 왕복이 되는지 **산출물을 직접 단언**한다. 실패하면 비-0 으로 죽고 무엇이 어긋났는지 출력한다.
 
 Windows 에서는 cp949 로케일 때문에 CLI 의 JSON/유니코드 출력이 깨질 수 있다. 실행 전

@@ -18,6 +18,7 @@ from pathlib import Path
 
 PY = sys.executable
 SECTIONS = [
+    "## Intent And Purpose",
     "## Done",
     "## Open",
     "## Failed Attempts",
@@ -29,6 +30,8 @@ SECTIONS = [
     "## Unapproved Proposals",
     "## Exact Next Step",
     "## Verification",
+    "## Lessons",
+    "## Utterance Ledger",
 ]
 
 
@@ -91,7 +94,7 @@ def main() -> int:
             if not saved.get(key):
                 fail(f"save 결과에 {key} 없음")
 
-        # 2) 저장된 본문에 11 섹션이 모두 조립됐는가
+        # 2) 저장된 본문에 13 섹션이 모두 조립됐는가
         detail = Path(root) / saved["detail_path"]
         if not detail.exists():
             fail(f"정본 파일 없음: {detail}")
@@ -117,7 +120,7 @@ def main() -> int:
         if "smoke-topic" not in topics:
             fail(f"list 에 smoke-topic 없음: {topics}")
 
-    print("smoke: OK (save · 11 sections · resume · list)")
+    print("smoke: OK (save · 14 headings · resume · list)")
     return 0
 
 
