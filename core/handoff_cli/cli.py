@@ -1811,6 +1811,67 @@ def cmd_decisions(cwd: str, root: str | None = None, decision_id: str | None = N
                     "complete": snapshot["complete"],
                     "topology": snapshot["topology"]})
 
+#: frontmatter 만 보려고 파일 머리에서 읽는 바이트. 저장본은 100KB 를 넘기도 하는데
+#: 프로젝트 하나에 수백 개가 쌓인다 — 전문을 읽으면 조회 한 번이 수십 MB 가 된다.
+_FRONTMATTER_PEEK = 4096
+
+
+def cmd_last_saved(cwd: str, session: str, root: str | None = None,
+                   include_archived: bool = False) -> dict:
+    """그 세션이 **마지막으로 저장한** 토픽 하나. 읽기 전용이다.
+
+    **재개 기준이 아니라 저장 기준이다.** 이름을 그렇게 지은 이유가 있다 — 재개는
+    아무 파일도 쓰지 않는 것이 계약이라 「누가 무엇을 재개했나」는 남는 자리가 없다.
+    남는 것은 `save` 가 frontmatter 에 박는 `writer_session` 뿐이고, 이 명령은 그
+    이미 있는 사실을 조회 표면 하나로 낼 뿐 새 상태를 만들지 않는다.
+
+    소비자(madi R48f)는 훅에서 받은 세션 아이디로 「이 세션이 어느 라운드인가」를
+    묻는다. **그 아이디는 런타임 축이어야 한다** — Claude Code 훅 payload 의
+    `session_id`, 전사 파일명과 같은 값이다. cross-session 메시지 주소(`local_…`)는
+    다른 축이라 그것으로 조회하면 전부 못 찾는다(실측으로 두 값이 완전히 다르다).
+
+    못 찾으면 **오류가 아니라 `topic: None`** 이다. 아직 한 번도 저장하지 않은
+    세션은 정상 상태이지 실패가 아니다.
+    """
+    resolved = repo.resolve_root(cwd, root)
+    wanted = (session or "").strip()
+    best: tuple[str, str, dict] | None = None       # (created, topic, meta)
+
+    for tdir, topic, archived in detail.iter_topic_dirs(resolved, include_archived):
+        for path in sorted(tdir.glob("*.md")):
+            if not detail._BODY_FILE_RE.match(path.name):
+                continue                            # LATEST.md 등 포인터는 본문이 아니다
+            try:
+                with path.open(encoding="utf-8") as handle:
+                    head = handle.read(_FRONTMATTER_PEEK)
+            except (OSError, UnicodeError):
+                continue
+            front, _body = detail.parse_frontmatter(head)
+            if (front.get("writer_session") or "").strip() != wanted or not wanted:
+                continue
+            # 정본은 frontmatter 의 `created` 다. 다만 그 값은 **초 단위**라 한 세션이
+            # 두 토픽을 잇달아 저장하면 같은 값이 나온다(시험이 실제로 잡았다). 그때는
+            # 파일 mtime 을 보조로 쓴다 — 완벽하진 않지만(복사·이관에서 바뀐다) 초 안쪽을
+            # 가를 유일한 사실이고, 못 가르는 채 앞의 것을 이기게 두는 것보다 낫다.
+            created = (front.get("created") or path.name)
+            try:
+                mtime = path.stat().st_mtime
+            except OSError:
+                mtime = 0.0
+            if best is None or (created, mtime) > best[0]:
+                best = ((created, mtime), topic,
+                        {"archived": archived, "source": _rel(resolved, path),
+                         "created": front.get("created") or None})
+
+    name = repo.project_name(resolved)
+    payload = ({"session": wanted, "topic": None, "found": False, "read_only": True}
+               if best is None else
+               {"session": wanted, "topic": best[1], "found": True,
+                "read_only": True, **best[2]})
+    return _result("last-saved", resolved, name,
+                   repo.read_project_id(resolved), [], payload)
+
+
 def cmd_negative(cwd: str, root: str | None = None,
                  include_archived: bool = False) -> dict:
     """부정 색인 — 실패·폐기만 모은다. **「이거 해봤나?」** 에 답한다.

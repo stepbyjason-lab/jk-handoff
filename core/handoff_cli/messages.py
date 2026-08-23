@@ -274,22 +274,35 @@ _MESSAGES: dict[str, dict[str, str]] = {
             "① 무엇을 이루려는 작업인가: 의도와 목적을 네 말로 한두 줄.\n"
             "   범위(무엇을 하고 안 하나)가 아니라 **무엇을 달성하면 끝인가**다.\n"
             "   위 2 의 「이번 범위」 절에서 답한다.                              [권한]\n"
-            "② 이전 세션에서 무슨 일이 있었나: 시작이 무엇이었고 방향이 몇 번 바뀌었나.\n"
+            "② 이 작업을 조직이 뭐라 부르나: 라운드·티켓·에픽 같은 **공식 식별자**를 댄다.\n"
+            "   **토픽 이름에서 짐작하지 마라** — 토픽은 파일 축이고 한 작업이 여러 토픽에\n"
+            "   흩어진다. 프로젝트에 식별자 목록의 정본이 있으면 **그 목록에서 고른다** —\n"
+            "   모양만 맞는 값을 새로 만들지 마라. 정본이 없으면 위 2 의 범위·결정·본문에\n"
+            "   적힌 것으로 답한다. 어느 쪽으로도 근거가 없으면 **「미상」이라고 적는다.**\n"
+            "   지어낸 식별자는 매 기록에 그대로 박힌다.                          [권한]\n"
+            "③ 잡무 위임 계획: 이 작업에서 생길 잡무를 열거하고 각각 어디로 보낼지 적는다.\n"
+            "   잡무는 둘로 갈린다 — 단순 실행·조회(빌드·grep·설치·로그 파싱)와\n"
+            "   추론이 조금 섞인 소작업(정독+해석, 작은 수정, 요약·번역).\n"
+            "   라우팅 규칙은 네 전역 룰에 있다. **적기만 하고 지금 보내지 않는다.**  [권한]\n"
+            "④ 개입 규칙: 리뷰를 판정하다가 「위반·scope 밖·무한확장」이라고 적는 순간\n"
+            "   다음 이터레이션을 열지 않고 그 자리에서 멈춰 보고한다 — 한 줄로 복명한다.\n"
+            "                                                                   [권한]\n"
+            "⑤ 이전 세션에서 무슨 일이 있었나: 시작이 무엇이었고 방향이 몇 번 바뀌었나.\n"
             "   각 전환의 계기가 된 사용자 발화 UID 를 댄다.                       [역사]\n"
-            "③ 살아 있는 결정이 총 몇 건인가. 죽은 것의 ID 를 전부 댄다.\n"
+            "⑥ 살아 있는 결정이 총 몇 건인가. 죽은 것의 ID 를 전부 댄다.\n"
             "   죽은 것을 다시 제안하지 않는다.                                  [권한]\n"
-            "④ 이번 범위: 포함과 제외, 각각의 권한 근거. 「미확정」이면 그렇게 적는다. [권한]\n"
-            "⑤ 진행 상태: Open 이 몇 건이고 ACTIVE/WAITING/DEFERRED 로 어떻게 갈리나.\n"
+            "⑦ 이번 범위: 포함과 제외, 각각의 권한 근거. 「미확정」이면 그렇게 적는다. [권한]\n"
+            "⑧ 진행 상태: Open 이 몇 건이고 ACTIVE/WAITING/DEFERRED 로 어떻게 갈리나.\n"
             "   Blocker 가 있으면 해제 증거가 무엇인지 한 줄.                      [관측]\n"
-            "⑥ 검증 상태: 저장본 `## Verification` 을 그대로 옮긴다. 코드가 움직였으면\n"
+            "⑨ 검증 상태: 저장본 `## Verification` 을 그대로 옮긴다. 코드가 움직였으면\n"
             "   재확인이 필요한 항목의 이름만 댄다. 지금 다시 재지 않는다.         [관측]\n"
-            "⑦ 다음에 할 행동: 위 2 의 Exact 를 한 줄로 옮긴다. 적기만 하고 실행하지\n"
+            "⑩ 다음에 할 행동: 위 2 의 Exact 를 한 줄로 옮긴다. 적기만 하고 실행하지\n"
             "   않는다 — 저장 시점의 계획이라 이미 끝났을 수도 있다.              [권한]\n"
-            "⑧ 규율·제약: 상시 규율과 현행 전역 제약을 각 항목 한 줄로 옮긴다.\n"
+            "⑪ 규율·제약: 상시 규율과 현행 전역 제약을 각 항목 한 줄로 옮긴다.\n"
             "   출처 문서가 있으면 그 핵심도 한 줄. 없으면 「해당 없음」.\n"
             "   어떻게 적용할지는 지금 적지 않는다 — 일할 때 따른다.              [권한]\n"
-            "⑨ 못 채운 칸이 있으면 「모름」이라고 적는다. 지어내지 않는다.\n\n"
-            "아홉 칸은 위에 실린 글로 답한다. 확인하려고 테스트를 돌리거나 코드를 뒤지지 않는다.\n"
+            "⑫ 못 채운 칸이 있으면 「모름」이라고 적는다. 지어내지 않는다.\n\n"
+            "열두 칸은 위에 실린 글로 답한다. 확인하려고 테스트를 돌리거나 코드를 뒤지지 않는다.\n"
             "작업 로그·보고는 사용자의 언어로 쓴다.\n\n"
             "**복명까지가 재개다. 여기서 멈추고 지시를 기다린다.**"
         ),
@@ -313,18 +326,6 @@ _MESSAGES: dict[str, dict[str, str]] = {
         ),
         # resume 결과 안에서 읽히므로 핸드오프는 이미 로드된 상태다 — "로드하고"가 아니라
         # "위 본문을 확인한 뒤"로 쓴다(옛 문구는 save 프롬프트의 앞 절에 이어지는 형태였다).
-        "resume_tail2": (
-            "위 본문의 Done/Open/Decisions/Unapproved Proposals/Exact Next Step/Git State "
-            "와 git drift, 그리고 글로벌 룰의 모델 라우팅(무엇을 누구에게 위임할지)을 확인한 뒤"
-        ),
-        "resume_tail3": (
-            "네가 이해한 의도·목적·방법·스코프를 네 말로 설명해줘 — 방법에는 잡무 위임 "
-            "계획을 포함해줘: 이 작업에서 생길 잡무(단순 실행·조회, 추론 섞인 소작업)를 "
-            "열거하고 모델 라우팅대로 각각 누구에게 보낼지. 그리고 리뷰를 판정하다가 네가 "
-            "'위반·scope 밖·무한확장'이라는 판단을 적는 순간 다음 이터레이션을 열지 않고 "
-            "그 리뷰를 멈춰 보고한다는 개입 규칙을 한 줄로 복명해줘. 작업 로그·보고는 "
-            "사용자의 언어로."
-        ),
         # save report
         "save_report_title": "✅ 핸드오프 저장: `{topic}` ({status})",
         "save_report_project": "   프로젝트: {project_name}",
@@ -604,15 +605,18 @@ _MESSAGES: dict[str, dict[str, str]] = {
         ),
         "resume_ack_slots": (
             "① What is this work trying to achieve: state the intent and purpose in your own words, one or two lines. Not the scope (what is in and out) but **what counts as done**. Answer from the scope section in block 2. [authority]\n"
-            "② What happened in the previous session: what was the start, how many turns did it take, and which user UID triggered each turn? [history]\n"
-            "③ How many live decisions; list every dead ID. Do not propose dead decisions again. [authority]\n"
-            "④ This scope: inclusion, exclusion, and authority evidence for each. Say unconfirmed when it is unconfirmed. [authority]\n"
-            "⑤ Progress: how many Open items and how are they split into ACTIVE/WAITING/DEFERRED? If blocked, give the release evidence. [observation]\n"
-            "⑥ Verification state: copy the saved `## Verification` verbatim. If the code moved, name the items needing recheck. Do not re-measure now. [observation]\n"
-            "⑦ One next action: restate the Exact from block 2 in one line. Write it; do not execute it -- it is the plan as of save time and may already be done. [authority]\n"
-            "⑧ Rules and constraints: copy each standing directive and active constraint in one line; one line for each source document, or say none. Do not write how you will apply them -- follow them while working. [authority]\n"
-            "⑨ Write ‘unknown’ for any slot you cannot fill. Do not invent it.\n\n"
-            "Answer all nine slots from the text above. Do not run tests or dig through code to check.\n"
+            "② What does the organisation call this work: give the official identifier (round, ticket, epic). **Do not guess it from the topic name** -- the topic is a file-level axis and one piece of work scatters across several topics. If the project keeps a canonical list of identifiers, **pick from that list** -- do not mint a value that merely matches the shape. With no such list, answer from the scope, decisions and body in block 2. If neither supports an identifier, write **unknown**. An invented identifier gets stamped into every record downstream. [authority]\n"
+            "③ Chore delegation plan: list the chores this work will produce and where each one goes. Chores split two ways -- plain execution/lookup (builds, grep, installs, log parsing) and small tasks with some reasoning in them (close reading plus interpretation, small edits, summarizing, translating). The routing rules live in your global rules. **Write the plan; do not dispatch anything now.** [authority]\n"
+            "④ Intervention rule: the moment you write \"violation / out of scope / runaway\" while judging a review, you do not open the next iteration -- you stop right there and report. Restate that rule in one line. [authority]\n"
+            "⑤ What happened in the previous session: what was the start, how many turns did it take, and which user UID triggered each turn? [history]\n"
+            "⑥ How many live decisions; list every dead ID. Do not propose dead decisions again. [authority]\n"
+            "⑦ This scope: inclusion, exclusion, and authority evidence for each. Say unconfirmed when it is unconfirmed. [authority]\n"
+            "⑧ Progress: how many Open items and how are they split into ACTIVE/WAITING/DEFERRED? If blocked, give the release evidence. [observation]\n"
+            "⑨ Verification state: copy the saved `## Verification` verbatim. If the code moved, name the items needing recheck. Do not re-measure now. [observation]\n"
+            "⑩ One next action: restate the Exact from block 2 in one line. Write it; do not execute it -- it is the plan as of save time and may already be done. [authority]\n"
+            "⑪ Rules and constraints: copy each standing directive and active constraint in one line; one line for each source document, or say none. Do not write how you will apply them -- follow them while working. [authority]\n"
+            "⑫ Write ‘unknown’ for any slot you cannot fill. Do not invent it.\n\n"
+            "Answer all twelve slots from the text above. Do not run tests or dig through code to check.\n"
             "Write work logs and reports in the user's language.\n\n"
             "**A resume ends at the acknowledgement. Stop here and wait for instructions.**"
         ),
@@ -632,21 +636,6 @@ _MESSAGES: dict[str, dict[str, str]] = {
             "follow it as written, do not summarize or skip it. **Do not take the JSON and "
             "split it across file reads** -- that path burns more than ten tool calls. If that "
             "flag is unknown you are on an older CLI: stop and tell me before proceeding."
-        ),
-        "resume_tail2": (
-            "Check the Done/Open/Decisions/Unapproved Proposals/Exact Next Step/"
-            "Git State above and the git drift, plus the global model-routing rules "
-            "(what to delegate to whom), then"
-        ),
-        "resume_tail3": (
-            "explain in your own words the intent, purpose, method and scope as you "
-            "understand them — include a chore-delegation plan: list the chores this "
-            "work will produce (simple execution/lookups, small reasoning tasks) and "
-            "who each one goes to per the model-routing rules. Then restate in one "
-            "line the intervention rule: while adjudicating a review, the moment you "
-            "write down that it violates a rule, is out of scope, or is runaway "
-            "expansion, you stop that review without opening another iteration and "
-            "report. Write work logs/reports in the user's language."
         ),
         "save_report_title": "✅ Handoff saved: `{topic}` ({status})",
         "save_report_project": "   Project: {project_name}",

@@ -101,6 +101,15 @@ def main(argv=None) -> int:
     p_neg.add_argument("--root", default=None)
     p_neg.add_argument("--all", action="store_true", help="archived 토픽도 포함")
 
+    # 그 세션이 **마지막으로 저장한** 토픽. 재개는 아무 파일도 쓰지 않는 것이 계약이라
+    # 남는 사실이 저장뿐이고, 이 명령은 그것을 조회 표면으로만 낸다(새 상태 없음).
+    p_saved = sub.add_parser("last-saved")
+    p_saved.add_argument("--root", default=None)
+    p_saved.add_argument("--session", required=True,
+                         help="런타임 세션 id (훅 payload 의 session_id·전사 파일명과 같은 축). "
+                              "cross-session 메시지 주소(local_…)는 다른 축이라 안 맞는다")
+    p_saved.add_argument("--all", action="store_true", help="archived 토픽도 포함")
+
     p_utt = sub.add_parser("utterances")
     p_utt.add_argument("--root", default=None)
     p_utt.add_argument("--session", required=True, help="저작 세션 id")
@@ -144,6 +153,9 @@ def main(argv=None) -> int:
         result = cli.cmd_decisions(cwd, args.root, args.id, include_archived=args.all)
     elif args.command == "negative":
         result = cli.cmd_negative(cwd, args.root, include_archived=args.all)
+    elif args.command == "last-saved":
+        result = cli.cmd_last_saved(cwd, args.session, args.root,
+                                    include_archived=args.all)
     elif args.command == "utterances":
         result = cli.cmd_utterances(cwd, args.session, args.root, args.transcript,
                                     topic=args.topic, since=args.since, fmt=args.fmt,
