@@ -304,7 +304,8 @@ def resume_directives(project_name: str, topic: str, lang: str, *,
                       saved_git: str = "unknown", state_relation: str = "unknown",
                       live_changed_paths: list[str] | None = None,
                       trust_markers: list[str] | None = None,
-                      constraint_paths: list[str] | None = None) -> str:
+                      constraint_paths: list[str] | None = None,
+                      work_id: str = "") -> str:
     """재개 시점에 CLI 가 직접 내는 지시문. `cmd_resume` 결과의 `resume_directives`.
 
     save 가 만들어 세션이 중계하던 것을 여기로 옮겼다 — 중계 지점이 없으므로 줄어들 수 없고,
@@ -354,6 +355,10 @@ def resume_directives(project_name: str, topic: str, lang: str, *,
     lines = [
         messages.msg("resume_block_scope", lang),
         messages.msg("resume_scope_guard", lang, project_name=project_name, topic=topic),
+        # 저장하는 세션이 적어 둔 작업 식별자를 **그대로** 실어 나른다. 재개는 이 값을
+        # 다시 판단하지 않는다 — 토픽에서 유추하면 틀린 값이 매 기록에 박힌다.
+        (messages.msg("resume_work_id", lang, work_id=work_id) if work_id
+         else messages.msg("resume_work_id_unknown", lang)),
         "",
         messages.msg("resume_block_authority", lang),
         authority,
@@ -1264,6 +1269,18 @@ def cmd_save(payload: dict, cwd: str, global_root: str | None = None) -> dict:
                          or payload.get("writer_model") or payload.get("model")),
         "writer_effort": payload.get("writer_effort") or os.environ.get("HANDOFF_EFFORT"),
         "writer_session": payload.get("session_id") or os.environ.get("HANDOFF_SESSION_ID"),
+        # 조직이 이 작업을 부르는 이름(라운드·티켓·에픽). **저장하는 세션이 적는다** —
+        # 그 세션은 사용자와 대화하며 확정한 값을 들고 있다. 재개는 이 값을 새로
+        # 판단하지 않고 실린 것을 옮기기만 한다.
+        #
+        # **토픽에서 유추하지 않는다.** 토픽은 파일 축이고 한 작업이 여러 토픽에
+        # 흩어진다 — 실측으로 한 라운드가 토픽 셋, 다른 라운드는 열여덟 개였고
+        # 작업이 아닌 토픽도 섞여 있었다. 유추하면 틀린 값이 매 기록에 박힌다.
+        # `sanitize_line` 이지 `sanitize_frontmatter_value` 가 아니다. 후자는 `code:uid,
+        # code:uid` 로 직렬화되는 `schema_problems` 용이라 `:`·`,` 를 지우는데, 이 파서는
+        # **첫 콜론만** 나누므로(`detail.parse_frontmatter`) 값 안의 콜론은 무해하다.
+        # 지우면 `R48f:H1` 이 `R48f H1` 이 되어 「그대로 실어 나른다」가 깨진다.
+        "work_id": detail.sanitize_line(payload.get("work_id") or "") or None,
         "covers_from": payload.get("covers_from"),
         "summary": summary,
         "git": git,
@@ -1816,6 +1833,16 @@ def cmd_decisions(cwd: str, root: str | None = None, decision_id: str | None = N
 _FRONTMATTER_PEEK = 4096
 
 
+def _front_value(front: dict, key: str) -> str | None:
+    """frontmatter 값 하나. 문자열 `"null"` 은 **없음**이다.
+
+    파서가 yaml 을 안 쓰고 `key: value` 를 그대로 읽으므로 `null` 이 문자열로 온다.
+    이 변환을 빼먹으면 「없음」이 「값이 'null' 인 것」으로 읽혀 미상 안내가 안 뜬다.
+    """
+    value = (front.get(key) or "").strip()
+    return value if value and value != "null" else None
+
+
 def cmd_last_saved(cwd: str, session: str, root: str | None = None,
                    include_archived: bool = False) -> dict:
     """그 세션이 **마지막으로 저장한** 토픽 하나. 읽기 전용이다.
@@ -2111,8 +2138,10 @@ def cmd_resume(cwd: str, topic: str, root: str | None = None) -> dict:
         # scope_guard 는 기존 필드 계약이라 유지한다(옛 어댑터·타 벤더 호환).
         # resume_directives 가 이를 포함한 전체 지시문이며, 어댑터는 이쪽을 출력한다.
         "scope_guard": messages.msg("resume_scope_guard", lang, project_name=name, topic=topic),
+        "work_id": _front_value(front, "work_id"),
         "resume_directives": resume_directives(
-            name, topic, lang, standing_block=standing_block,
+            name, topic, lang, work_id=_front_value(front, "work_id") or "",
+            standing_block=standing_block,
             active_constraints=active_constraints, intent_block=intent_block,
             exact_block=exact_block, recap_block=recap_block,
             dialogue_block=dialogue_block, verification_block=verification_block,

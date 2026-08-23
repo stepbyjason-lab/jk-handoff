@@ -223,6 +223,8 @@ _MESSAGES: dict[str, dict[str, str]] = {
             "세션) 이 작업이 아니다 — 선택지로 제시하지 말고 무시한다. 대상 변경은 사용자가 "
             "명시적으로 지시할 때만 이뤄진다."
         ),
+        "resume_work_id": "- 이 작업의 식별자: **{work_id}** — 저장한 세션이 적은 값이다. 복명 ② 는 이 값을 그대로 옮긴다.",
+        "resume_work_id_unknown": "- 이 작업의 식별자: **미상** — 저장본에 적혀 있지 않다. 토픽 이름에서 짐작하지 않는다. 사용자가 알려주면 다음 저장에 적는다.",
         "resume_source_decisions": "결정 — 살아 있는 것과 죽은 것",
         "resume_decision_span": "결정 {total}건 · D{first}~D{last}.",
         "resume_decisions_unknown": ("생사 판정 불가 {count}건 — 살아 있는 것으로 취급하지 않는다. "
@@ -274,12 +276,13 @@ _MESSAGES: dict[str, dict[str, str]] = {
             "① 무엇을 이루려는 작업인가: 의도와 목적을 네 말로 한두 줄.\n"
             "   범위(무엇을 하고 안 하나)가 아니라 **무엇을 달성하면 끝인가**다.\n"
             "   위 2 의 「이번 범위」 절에서 답한다.                              [권한]\n"
-            "② 이 작업을 조직이 뭐라 부르나: 라운드·티켓·에픽 같은 **공식 식별자**를 댄다.\n"
-            "   **토픽 이름에서 짐작하지 마라** — 토픽은 파일 축이고 한 작업이 여러 토픽에\n"
-            "   흩어진다. 프로젝트에 식별자 목록의 정본이 있으면 **그 목록에서 고른다** —\n"
-            "   모양만 맞는 값을 새로 만들지 마라. 정본이 없으면 위 2 의 범위·결정·본문에\n"
-            "   적힌 것으로 답한다. 어느 쪽으로도 근거가 없으면 **「미상」이라고 적는다.**\n"
-            "   지어낸 식별자는 매 기록에 그대로 박힌다.                          [권한]\n"
+            "② 이 작업을 조직이 뭐라 부르나: **위 1 의 「이 작업의 식별자」 줄에서\n"
+            "   `**…**` 안에 든 값만 옮긴다.** 그 줄의 설명·주석은 버린다 — 줄을 통째로\n"
+            "   옮기면 식별자가 한 문장이 되고, 그것이 다음 저장에 그대로 실린다.\n"
+            "   `**미상**` 이면 「미상」이라고만 답한다.\n"
+            "   **다시 고르지 마라** — 목록에서도, 토픽 이름에서도, 본문에서도 아니다.\n"
+            "   그 값은 저장한 세션이 사용자와 확정한 것이고, 고르는 일은 저장하는 쪽의\n"
+            "   몫이다. 여기서 새로 판단하면 매 재개마다 값이 흔들린다.          [권한]\n"
             "③ 잡무 위임 계획: 이 작업에서 생길 잡무를 열거하고 각각 어디로 보낼지 적는다.\n"
             "   잡무는 둘로 갈린다 — 단순 실행·조회(빌드·grep·설치·로그 파싱)와\n"
             "   추론이 조금 섞인 소작업(정독+해석, 작은 수정, 요약·번역).\n"
@@ -555,6 +558,8 @@ _MESSAGES: dict[str, dict[str, str]] = {
             "another session) — ignore it, do not offer it as an option. The target changes "
             "only when the user explicitly says so."
         ),
+        "resume_work_id": "- Identifier for this work: **{work_id}** -- written by the session that saved it. Slot 2 copies this value as-is.",
+        "resume_work_id_unknown": "- Identifier for this work: **unknown** -- the saved version does not carry one. Do not guess it from the topic name. If the user names it, record it on the next save.",
         "resume_source_decisions": "Decisions — live and dead",
         "resume_decision_span": "{total} decisions, D{first}-D{last}.",
         "resume_decisions_unknown": ("{count} decisions with undetermined liveness -- do not treat them as live. "
@@ -605,7 +610,7 @@ _MESSAGES: dict[str, dict[str, str]] = {
         ),
         "resume_ack_slots": (
             "① What is this work trying to achieve: state the intent and purpose in your own words, one or two lines. Not the scope (what is in and out) but **what counts as done**. Answer from the scope section in block 2. [authority]\n"
-            "② What does the organisation call this work: give the official identifier (round, ticket, epic). **Do not guess it from the topic name** -- the topic is a file-level axis and one piece of work scatters across several topics. If the project keeps a canonical list of identifiers, **pick from that list** -- do not mint a value that merely matches the shape. With no such list, answer from the scope, decisions and body in block 2. If neither supports an identifier, write **unknown**. An invented identifier gets stamped into every record downstream. [authority]\n"
+            "② What does the organisation call this work: **copy only the value inside `**…**` on the \"Identifier for this work\" line in block 1.** Drop the explanatory text on that line -- copying the whole line turns the identifier into a sentence, and that sentence goes into the next save. If it reads `**unknown**`, answer just unknown. **Do not pick again** -- not from a list, not from the topic name, not from the body. That value was settled with the user by the session that saved it, and choosing is the saving side's job. Deciding again here makes the value drift on every resume. [authority]\n"
             "③ Chore delegation plan: list the chores this work will produce and where each one goes. Chores split two ways -- plain execution/lookup (builds, grep, installs, log parsing) and small tasks with some reasoning in them (close reading plus interpretation, small edits, summarizing, translating). The routing rules live in your global rules. **Write the plan; do not dispatch anything now.** [authority]\n"
             "④ Intervention rule: the moment you write \"violation / out of scope / runaway\" while judging a review, you do not open the next iteration -- you stop right there and report. Restate that rule in one line. [authority]\n"
             "⑤ What happened in the previous session: what was the start, how many turns did it take, and which user UID triggered each turn? [history]\n"

@@ -66,6 +66,11 @@ CLI 가 저장 후 아래 보고를 돌려준다(어댑터는 그대로 출력):
 **재개는 맥락 전달에서 끝난다.** 지시문의 복명을 채우면 거기서 멈추고 사용자 지시를 기다린다.
 저장본의 `Exact Next Step` 도 실행하지 않는다 — 저장 시점의 계획이라 이미 끝났을 수 있다.
 
+**「이 작업을 조직이 뭐라 부르나」는 저장할 때 적는다**(`work_id` — 라운드·티켓·에픽).
+저장하는 세션은 사용자와 대화하며 그 값을 확정했으므로 알고 있고, 재개는 그것을 그대로
+실어 나른다. **토픽 이름에서 유추하지 않는다** — 토픽은 파일 축이라 한 작업이 여러 토픽에
+흩어지고 작업이 아닌 토픽도 있다. 값이 없으면 「미상」으로 뜬다. 거짓보다 미상이 낫다.
+
 저장된 정본(`.handoff/login-api/…md`)은 이렇게 생겼다:
 
 ```markdown
@@ -124,6 +129,7 @@ python -m handoff_cli --cwd <cwd> resume --topic <t> [--directives-only]  # 재�
 python -m handoff_cli --cwd <cwd> archive --topic <t>
 python -m handoff_cli --cwd <cwd> decisions [--id <ID>]    # 결정 색인 — 생사·관계·체인(읽기 전용)
 python -m handoff_cli --cwd <cwd> negative       # 부정 색인 — 실패·폐기(읽기 전용)
+python -m handoff_cli --cwd <cwd> last-saved --session <id>  # 그 세션이 마지막으로 저장한 토픽
 python -m handoff_cli --cwd <cwd> reindex        # 기존 상세 정본에서 집계 인덱스 백필
 ```
 

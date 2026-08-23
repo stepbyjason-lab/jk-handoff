@@ -345,6 +345,10 @@ def assemble_body(meta: dict, sections: dict, files_touched: list, created_human
         f"writer_model: {meta.get('writer_model') or 'null'}\n"
         f"writer_effort: {meta.get('writer_effort') or 'null'}\n"
         f"writer_session: {meta.get('writer_session') or 'null'}\n"
+        # 조직이 이 작업을 부르는 이름(라운드·티켓·에픽). 저장하는 세션이 적고,
+        # 재개는 새로 판단하지 않고 이 값을 그대로 실어 나른다. 토픽과 다른 축이다 —
+        # 토픽은 파일 이름이고 한 작업이 여러 토픽에 흩어진다.
+        f"work_id: {meta.get('work_id') or 'null'}\n"
         # 한 세션에서 두 번 이상 저장할 때, 이 본문이 **어느 시점 이후**를 덮는지.
         # null 이면 세션 처음부터다. 이게 없으면 두 번째 저장본만 읽은 사람이
         # 「세션이 여기서 시작됐다」고 오해한다 — 델타를 전체로 읽는 사고.
