@@ -186,6 +186,10 @@ _MESSAGES: dict[str, dict[str, str]] = {
         "unapproved_default": "- 미승인 제안 없음.",
         "unapproved_note": "> Chair 가 스스로 정한 것. 사용자가 승인한 적 없다 — 진행 전 확인할 것.",
         "exact_next_step_default": "(다음 세션이 수행할 단계 미정)",
+        "exact_unapproved_marker": (
+            "> ⚠ **이 다음 행동은 chair 가 정한 것이다 — 사용자가 지시한 적 없다.** "
+            "근거 발화가 대장에 없다. 실행하기 전에 사용자에게 확인한다."
+        ),
         "verification_default": "- 미검증",
         "files_touched_empty": "이번 세션에서 기록할 변경 파일 없음.",
         "git_state_not_git": "- git 저장소 아님 — git 상태 없음.",
@@ -240,7 +244,6 @@ _MESSAGES: dict[str, dict[str, str]] = {
         "resume_block_observation": "━━━ 4. 현재 관측 — 재확인 대상이다 ━━━",
         "resume_block_read": "━━━ 5. 반드시 전체를 읽을 것 (키워드 검색으로 훑지 않는다) ━━━",
         "resume_block_ack": "━━━ 6. 복명 — 아래를 채운 뒤에 멈춘다 ━━━",
-        "resume_block_log": "━━━ 7. 작업 로그·보고는 사용자의 언어로 ━━━",
         "resume_standing_scope": ("※ 위 규율과 결정은 일할 때 지킬 규칙이다. "
                                  "네가 무언가를 고쳤을 때 발동하지, 재개했다는 이유로 발동하지 않는다."),
         "resume_source_standing": "상시 규율 원문 — 사용자가 건 것, 영구",
@@ -268,22 +271,26 @@ _MESSAGES: dict[str, dict[str, str]] = {
             "   정상 재개마다 이전 판을 다시 요약하는 것은 비용만 늘리고 세대 손실을 만든다."
         ),
         "resume_ack_slots": (
-            "① 이전 세션에서 무슨 일이 있었나: 시작이 무엇이었고 방향이 몇 번 바뀌었나.\n"
+            "① 무엇을 이루려는 작업인가: 의도와 목적을 네 말로 한두 줄.\n"
+            "   범위(무엇을 하고 안 하나)가 아니라 **무엇을 달성하면 끝인가**다.\n"
+            "   위 2 의 「이번 범위」 절에서 답한다.                              [권한]\n"
+            "② 이전 세션에서 무슨 일이 있었나: 시작이 무엇이었고 방향이 몇 번 바뀌었나.\n"
             "   각 전환의 계기가 된 사용자 발화 UID 를 댄다.                       [역사]\n"
-            "② 살아 있는 결정이 총 몇 건인가. 죽은 것의 ID 를 전부 댄다.\n"
+            "③ 살아 있는 결정이 총 몇 건인가. 죽은 것의 ID 를 전부 댄다.\n"
             "   죽은 것을 다시 제안하지 않는다.                                  [권한]\n"
-            "③ 이번 범위: 포함과 제외, 각각의 권한 근거. 「미확정」이면 그렇게 적는다. [권한]\n"
-            "④ 진행 상태: Open 이 몇 건이고 ACTIVE/WAITING/DEFERRED 로 어떻게 갈리나.\n"
+            "④ 이번 범위: 포함과 제외, 각각의 권한 근거. 「미확정」이면 그렇게 적는다. [권한]\n"
+            "⑤ 진행 상태: Open 이 몇 건이고 ACTIVE/WAITING/DEFERRED 로 어떻게 갈리나.\n"
             "   Blocker 가 있으면 해제 증거가 무엇인지 한 줄.                      [관측]\n"
-            "⑤ 검증 상태: 저장본 `## Verification` 을 그대로 옮긴다. 코드가 움직였으면\n"
+            "⑥ 검증 상태: 저장본 `## Verification` 을 그대로 옮긴다. 코드가 움직였으면\n"
             "   재확인이 필요한 항목의 이름만 댄다. 지금 다시 재지 않는다.         [관측]\n"
-            "⑥ 다음에 할 행동: 위 2 의 Exact 를 한 줄로 옮긴다. 적기만 하고 실행하지\n"
+            "⑦ 다음에 할 행동: 위 2 의 Exact 를 한 줄로 옮긴다. 적기만 하고 실행하지\n"
             "   않는다 — 저장 시점의 계획이라 이미 끝났을 수도 있다.              [권한]\n"
-            "⑦ 규율·제약: 상시 규율과 현행 전역 제약을 각 항목 한 줄로 옮긴다.\n"
+            "⑧ 규율·제약: 상시 규율과 현행 전역 제약을 각 항목 한 줄로 옮긴다.\n"
             "   출처 문서가 있으면 그 핵심도 한 줄. 없으면 「해당 없음」.\n"
             "   어떻게 적용할지는 지금 적지 않는다 — 일할 때 따른다.              [권한]\n"
-            "⑧ 못 채운 칸이 있으면 「모름」이라고 적는다. 지어내지 않는다.\n\n"
-            "여덟 칸은 위에 실린 글로 답한다. 확인하려고 테스트를 돌리거나 코드를 뒤지지 않는다.\n"
+            "⑨ 못 채운 칸이 있으면 「모름」이라고 적는다. 지어내지 않는다.\n\n"
+            "아홉 칸은 위에 실린 글로 답한다. 확인하려고 테스트를 돌리거나 코드를 뒤지지 않는다.\n"
+            "작업 로그·보고는 사용자의 언어로 쓴다.\n\n"
             "**복명까지가 재개다. 여기서 멈추고 지시를 기다린다.**"
         ),
         "resume_incomplete_marker": "[⚠ 이 저장본은 불완전하다 — {reasons}. 여기 실린 맥락이 세션 전체가 아닐 수 있다.]",
@@ -509,6 +516,10 @@ _MESSAGES: dict[str, dict[str, str]] = {
         "unapproved_default": "- No unapproved proposals.",
         "unapproved_note": "> Chair's own calls. The user has not approved this section — confirm before acting.",
         "exact_next_step_default": "(next session's step not decided)",
+        "exact_unapproved_marker": (
+            "> ⚠ **The chair chose this next action — the user never asked for it.** "
+            "No source utterance backs it. Confirm with the user before executing."
+        ),
         "verification_default": "- Unverified",
         "files_touched_empty": "No files changed to record this session.",
         "git_state_not_git": "- Not a git repository — no git state.",
@@ -564,7 +575,6 @@ _MESSAGES: dict[str, dict[str, str]] = {
         "resume_block_observation": "━━━ 4. Current observations — recheck them ━━━",
         "resume_block_read": "━━━ 5. Read everything (do not skim by keyword search) ━━━",
         "resume_block_ack": "━━━ 6. Acknowledge the following, then stop ━━━",
-        "resume_block_log": "━━━ 7. Write work logs and reports in the user's language ━━━",
         "resume_standing_scope": ("※ The directives and decisions above are rules to follow while "
                                  "working. They fire when you change something, not because you resumed."),
         "resume_source_standing": "Standing directives verbatim — user-set and durable",
@@ -593,15 +603,17 @@ _MESSAGES: dict[str, dict[str, str]] = {
             "or version comparison. Re-summarizing a previous version on every normal resume only adds cost and generation loss."
         ),
         "resume_ack_slots": (
-            "① What happened in the previous session: what was the start, how many turns did it take, and which user UID triggered each turn? [history]\n"
-            "② How many live decisions; list every dead ID. Do not propose dead decisions again. [authority]\n"
-            "③ This scope: inclusion, exclusion, and authority evidence for each. Say unconfirmed when it is unconfirmed. [authority]\n"
-            "④ Progress: how many Open items and how are they split into ACTIVE/WAITING/DEFERRED? If blocked, give the release evidence. [observation]\n"
-            "⑤ Verification state: copy the saved `## Verification` verbatim. If the code moved, name the items needing recheck. Do not re-measure now. [observation]\n"
-            "⑥ One next action: restate the Exact from block 2 in one line. Write it; do not execute it -- it is the plan as of save time and may already be done. [authority]\n"
-            "⑦ Rules and constraints: copy each standing directive and active constraint in one line; one line for each source document, or say none. Do not write how you will apply them -- follow them while working. [authority]\n"
-            "⑧ Write ‘unknown’ for any slot you cannot fill. Do not invent it.\n\n"
-            "Answer all eight slots from the text above. Do not run tests or dig through code to check.\n"
+            "① What is this work trying to achieve: state the intent and purpose in your own words, one or two lines. Not the scope (what is in and out) but **what counts as done**. Answer from the scope section in block 2. [authority]\n"
+            "② What happened in the previous session: what was the start, how many turns did it take, and which user UID triggered each turn? [history]\n"
+            "③ How many live decisions; list every dead ID. Do not propose dead decisions again. [authority]\n"
+            "④ This scope: inclusion, exclusion, and authority evidence for each. Say unconfirmed when it is unconfirmed. [authority]\n"
+            "⑤ Progress: how many Open items and how are they split into ACTIVE/WAITING/DEFERRED? If blocked, give the release evidence. [observation]\n"
+            "⑥ Verification state: copy the saved `## Verification` verbatim. If the code moved, name the items needing recheck. Do not re-measure now. [observation]\n"
+            "⑦ One next action: restate the Exact from block 2 in one line. Write it; do not execute it -- it is the plan as of save time and may already be done. [authority]\n"
+            "⑧ Rules and constraints: copy each standing directive and active constraint in one line; one line for each source document, or say none. Do not write how you will apply them -- follow them while working. [authority]\n"
+            "⑨ Write ‘unknown’ for any slot you cannot fill. Do not invent it.\n\n"
+            "Answer all nine slots from the text above. Do not run tests or dig through code to check.\n"
+            "Write work logs and reports in the user's language.\n\n"
             "**A resume ends at the acknowledgement. Stop here and wait for instructions.**"
         ),
         "resume_incomplete_marker": "[⚠ This saved version is incomplete — {reasons}. The context here may not cover the whole session.]",

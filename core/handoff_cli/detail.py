@@ -465,11 +465,17 @@ def detect_orphan(tdir: Path, latest_target: str | None, lang: str = "ko") -> st
     return None
 
 
-def _extract_section(body: str, heading: str) -> str:
+def _extract_section(body: str, heading: str, skip_quotes: bool = False) -> str:
     """`## <heading>` 섹션의 첫 의미 있는 줄을 한 줄로 돌려준다(마커·체크박스 제거).
 
     없거나 괄호형 placeholder(`(...)`)뿐이면 빈 문자열. CURRENT.md 집계 보조줄용
     (다음 행동·블로커 추출). 인덱스 역할 유지를 위해 한 줄만 뽑는다.
+
+    `skip_quotes` 는 **CLI 가 인용을 만들어 넣는 절에만** 켠다. 지금은
+    `Exact Next Step` 하나다 — 근거 발화 원문과 미승인 경고가 거기 `> ` 로 붙는다.
+    다른 절의 인용은 사용자가 쓴 산문이므로 버리면 안 된다: 전 절에 켰더니
+    `> CI 용량이 소진되어 배포가 막혔다` 같은 정당한 블로커가 인덱스에서 사라졌다
+    (외부 리뷰 실측).
     """
     in_section = False
     for line in body.splitlines():
@@ -478,6 +484,12 @@ def _extract_section(body: str, heading: str) -> str:
             in_section = stripped[3:].strip() == heading
             continue
         if in_section and stripped:
+            # **CLI 가 넣은 인용은 내용이 아니다** — 근거 발화 원문·미승인 경고가
+            # `> ` 로 시작한다. 예전에는 `lstrip("-*> ")` 이 인용부호를 벗겨 그것들을
+            # 본문처럼 뽑았고, Exact 절 맨 앞에 미승인 경고가 붙자 **인덱스의 「다음:」이
+            # 실제 행동 대신 경고문을 싣게 됐다**(외부 리뷰 실측 · test_14 3건).
+            if skip_quotes and stripped.startswith(">"):
+                continue
             text = stripped.lstrip("-*> ").strip()
             text = re.sub(r"^\[[ xX]\]\s*", "", text)  # checkbox 마커 제거
             if not text:
@@ -636,7 +648,15 @@ def normalize_decision_ids_in_block(block: str, project: str, topic: str) -> str
     def sub(match):
         return f"{match.group(1)}**{decision_id_prefix(project, topic)}-{match.group(2)}**"
 
-    return _SHORT_ID_RE.sub(sub, block)
+    block = _SHORT_ID_RE.sub(sub, block)
+
+    # 어댑터는 이전 판본을 보고 **옛 접두 완전형**을 그대로 옮겨 적는다. 축약만
+    # 정규화하면 그 경로가 통째로 빠진다 — 관계 토큰의 target 도 같이 새는 자리다.
+    aliases = decision_id_prefix_aliases(project, topic)
+    for legacy in aliases[1:]:
+        block = _legacy_id_re(legacy).sub(
+            lambda m: f"{aliases[0]}-{m.group(1)}", block)
+    return block
 
 
 def decision_id_prefix(project: str, topic: str) -> str:
@@ -650,11 +670,60 @@ def decision_id_prefix(project: str, topic: str) -> str:
     return f"{project}-{topic}"
 
 
+def decision_id_prefix_aliases(project: str, topic: str) -> tuple[str, ...]:
+    """이 토픽을 가리켜 온 접두 전부. **첫 값이 정규형이다.**
+
+    v0.4.0 이전에는 접두가 언제나 `{project}-{topic}` 이었다. 토픽이 프로젝트명으로
+    시작하면 `madi-madi-operational-floor-D1` 처럼 겹쳐 읽혀서 그 규칙을 바꿨는데,
+    **이미 저장된 판본에는 옛 접두가 그대로 남는다.**
+
+    두 접두를 서로 다른 결정으로 보면 재개가 같은 결정을 두 벌 싣는다 — 실측으로
+    madi 재개가 44건을 실었고 고유한 것은 25건이었다(`D1`~`D19` 가 전부 두 벌).
+
+    그래서 판독기에 「두 이름을 같게 보라」를 넣지 않는다. 그건 조항을 하나 더 얹는
+    것이고, 판독 쪽 두 함수는 이미 P-C 중단 신호가 난 자리다. 대신 **저장 입구에서
+    한 형식으로 접는다.** 정본이 하나면 읽는 쪽은 아무것도 몰라도 된다.
+    """
+    canonical = decision_id_prefix(project, topic)
+    legacy = f"{project}-{topic}"
+    return (canonical,) if legacy == canonical else (canonical, legacy)
+
+
+#: ID 를 이루는 글자. 앞뒤에 이게 붙어 있으면 **더 긴 ID 의 일부**이지 이 ID 가 아니다.
+#: `\w` 는 Python 3 에서 유니코드다 — 한글 토픽이 여기 걸린다(이 코드베이스는 허용한다).
+_ID_CHAR = r"[\w.-]"
+
+
+def _legacy_id_re(prefix: str) -> "re.Pattern[str]":
+    """옛 접두가 붙은 완전형 ID 를 잡는 정규식. 번호는 그룹 1 로 돌려준다.
+
+    `\\b` 로는 못 막는다 — `-` 와 `.` 이 단어 경계라 **다른 프로젝트 ID 안에서 매치가
+    시작한다.** 실측(외부 리뷰): 이 토픽이 `demo`/`demo-work` 일 때 남의 관계 대상
+    `other-demo-demo-work-D7` 이 `other-demo-work-D7` 로 바뀌어, 관계가 조용히 엉뚱한
+    결정을 가리켰다.
+
+    그래서 경계를 「단어」가 아니라 **「ID 를 이루는 글자」**로 잡는다. 앞뒤에 ID 글자가
+    붙어 있으면 더 긴 ID 의 일부이므로 건드리지 않는다.
+    """
+    return re.compile(
+        r"(?<!" + _ID_CHAR + r")" + re.escape(prefix)
+        + r"-([DLSI]\d+)(?!" + _ID_CHAR + r")")
+
+
+def fold_legacy_decision_id(value: str, project: str, topic: str) -> str:
+    """완전형 ID 의 접두가 옛 별칭이면 정규형으로 바꾼다. 아니면 그대로."""
+    aliases = decision_id_prefix_aliases(project, topic)
+    for legacy in aliases[1:]:
+        if value.startswith(f"{legacy}-"):
+            return f"{aliases[0]}-{value[len(legacy) + 1:]}"
+    return value
+
+
 def normalize_decision_id(raw: str, project: str, topic: str) -> str:
-    """`D1` 같은 축약을 완전형으로. 이미 완전형이면 그대로."""
+    """`D1` 같은 축약을 완전형으로. 완전형이면 접두만 정규형으로 접는다."""
     value = raw.strip().strip("*")
     if _DECISION_ID_RE.match(value):
-        return value
+        return fold_legacy_decision_id(value, project, topic)
     if re.fullmatch(r"[DLSI]\d+", value):
         return f"{decision_id_prefix(project, topic)}-{value}"
     return value
@@ -735,7 +804,7 @@ def _read_topic_summary(root: str, tdir: Path, archived: bool, lang: str = "ko")
                 if line.strip().startswith(">"):
                     summary = line.strip().lstrip("> ").strip()
                     break
-        next_step = _extract_section(body, "Exact Next Step")
+        next_step = _extract_section(body, "Exact Next Step", skip_quotes=True)
         blocker = _extract_section(body, "Blockers And Questions")
         # 언어중립 기본값 판정: ko/en 어느 언어로 저장된 본문이든
         # "블로커 없음" 계열 placeholder 는 상수집합(messages.BLOCKER_DEFAULTS) 비교로

@@ -59,7 +59,7 @@ CLI 가 저장 후 아래 보고를 돌려준다(어댑터는 그대로 출력):
 어댑터는 그것을 그대로 이행한다 — 저장 세션이 긴 텍스트를 중계하다 빠뜨리는 경로를 없앤 것이다.
 덕분에 옛 저장본을 재개해도 항상 최신 지시가 나간다.
 
-**`--directives-only` 는 그 7블록을 평문으로만 낸다.** JSON 으로 받아 파일로 빼고 나눠 읽는
+**`--directives-only` 는 그 재개 지시를 평문으로만 낸다.** JSON 으로 받아 파일로 빼고 나눠 읽는
 경로가 재개 1회에 도구 호출을 열 번 넘게 썼다(실측). 포인터가 어댑터 이름이 아니라 CLI 를
 직접 부르는 것도 같은 이유다 — 설치된 어댑터 버전과 무관해진다.
 
@@ -120,7 +120,7 @@ git 상태(branch·full SHA·dirty)는 어댑터가 아니라 **CLI 가 실측**
 python -m handoff_cli --cwd <cwd> save           # JSON 페이로드를 stdin 또는 --input <file>
 python -m handoff_cli --cwd <cwd> list [--all]   # --all 로 archived 포함
 python -m handoff_cli --cwd <cwd> find --keyword <k> [--global-scope <root>...]
-python -m handoff_cli --cwd <cwd> resume --topic <t> [--directives-only]  # 평문 7블록만
+python -m handoff_cli --cwd <cwd> resume --topic <t> [--directives-only]  # 재개 지시 평문만
 python -m handoff_cli --cwd <cwd> archive --topic <t>
 python -m handoff_cli --cwd <cwd> decisions [--id <ID>]    # 결정 색인 — 생사·관계·체인(읽기 전용)
 python -m handoff_cli --cwd <cwd> negative       # 부정 색인 — 실패·폐기(읽기 전용)

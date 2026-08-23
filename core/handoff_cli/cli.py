@@ -311,7 +311,10 @@ def resume_directives(project_name: str, topic: str, lang: str, *,
     저장본이 아니라 실행 시점의 문구가 나가므로 문구 개정이 옛 저장본에도 소급된다.
 
     v6은 이 문자열 자체를 전달 채널로 쓴다. 따라서 본문을 다시 요약하거나 자연어로
-    해석하지 않고, 절 전문과 기계 관측값을 정해진 7블록에 배치한다.
+    해석하지 않고, 절 전문과 기계 관측값을 정해진 블록에 배치한다.
+
+    **마지막 블록은 복명이다.** 뒤에 블록을 더 붙이면 「여기서 멈추고 지시를 기다린다」가
+    마지막 줄이 아니게 되고, 재개가 다음 행동으로 미끄러진다.
     """
     live_changed_paths = live_changed_paths or []
     trust_markers = trust_markers or []
@@ -368,10 +371,12 @@ def resume_directives(project_name: str, topic: str, lang: str, *,
                      constraint_paths=(", ".join(constraint_paths)
                                        if constraint_paths else messages.msg("resume_none", lang))),
         "",
+        # 복명이 **마지막 블록**이다. 뒤에 블록을 더 붙이면 「여기서 멈추고 지시를
+        # 기다린다」가 마지막 줄이 아니게 되고, 그 자리에 있던 로그 언어 안내가
+        # 재개의 끝맺음을 덮었다. 옛 판(v6)도 복명 문단으로 끝났고 그래서 재개가
+        # 다음 행동으로 미끄러지지 않았다 — 로그 언어는 복명 슬롯 꼬리로 옮겼다.
         messages.msg("resume_block_ack", lang),
         messages.msg("resume_ack_slots", lang),
-        "",
-        messages.msg("resume_block_log", lang),
     ]
     return "\n".join(lines)
 
@@ -1341,11 +1346,32 @@ def cmd_save(payload: dict, cwd: str, global_root: str | None = None) -> dict:
             dec_problems.append({"code": "decision_source_unknown",
                                  "uid": "exact_next_step", "found": uid})
             continue
+        # **권위는 사람 발화에서만 나온다.** 결정·상시 규율은 이미 `human_uids` 로
+        # 거르는데 Exact 만 `quotes_all` 만 봤다 — 하네스 레코드(`<command-name>` 같은
+        # `kind: system` 줄)의 UID 를 대면 인용이 붙고 미승인 표시는 안 붙었다.
+        # 사람이 시키지 않은 행동이 사용자 근거가 있는 것처럼 보였다(외부 리뷰 실측).
+        if uid not in human_uids:
+            dec_problems.append({"code": "exact_source_not_human",
+                                 "uid": "exact_next_step", "found": uid})
+            continue
         quote_lines += [f"> {line}".rstrip() for line in quotes_all[uid].splitlines()]
     if quote_lines:
         sections["exact_next_step"] = (
             (sections.get("exact_next_step") or "").rstrip()
             + "\n\n" + "\n".join(quote_lines)).strip()
+    elif (sections.get("exact_next_step") or "").strip():
+        # **출처가 없으면 chair 가 정한 것이다.** 결정은 이 경우 자동으로
+        # `Unapproved Proposals` 로 가고 「출처: chair(미승인)」이 박히며, 상시 규율은
+        # 아예 거부된다. 그런데 Exact 만 표시 없이 통과했다 — 그래서 chair 가 스스로
+        # 정한 다음 행동이 근거 원문 없이 명령형으로 실렸고, 세션이 저장 직후 그것을
+        # 실행했다(2026-08-22 madi r75e 실측: 벤더 한 판이 그대로 나갔다).
+        #
+        # 거부하지는 않는다 — 다음 행동을 지시받지 않은 세션이 흔하고 chair 추정은
+        # 쓸모가 있다. 다만 **사용자 지시로 위장되면 안 된다.** 재개는 이 절을 본문에서
+        # 그대로 읽어 블록 2 에 실으므로, 여기 한 줄이 재개까지 따라간다.
+        sections["exact_next_step"] = (
+            messages.msg("exact_unapproved_marker", lang) + "\n\n"
+            + sections["exact_next_step"].strip())
     # 결정·규율과 **같은 규칙**을 적용한다. 이게 없으면 대장은 「다음 행동으로 담았다」고
     # 하는데 정작 근거 원문이 없는 저장이 통과하고, 반대로 다른 절로 처분한 UID 를
     # 인용해도 통과했다(외부 리뷰 재현).

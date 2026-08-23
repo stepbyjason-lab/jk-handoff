@@ -1,6 +1,6 @@
 ---
 description: 세션 핸드오프 - 프로젝트 안에 상세 정본을 저장하고 글로벌 진행상황 인덱스를 갱신하며, 다음 세션·다른 머신에서 안전하게 이어간다.
-version: 0.4.1
+version: 0.4.2
 model: sonnet
 ---
 
@@ -376,6 +376,11 @@ UID. **`source` 없는 상시 규율은 거부된다**(`standing_source_missing`
 
 `exact_next_step` 의 근거 발화는 `next_step_source: ["U00xx"]` 로 UID 만 넘긴다 —
 CLI 가 지시 원문을 절에 병기한다(지시가 원문으로 있어야 다음 세션의 손이 바로 움직인다).
+**사람이 친 발화만 권위다** — 하네스 레코드(`<task-notification>`·`<system-reminder>`·
+자동압축 재개 주입문 같은 것)의 UID 를 넣으면 거부된다(`exact_source_not_human`).
+결정·상시 규율과 같은 잣대다. **근거가 없으면 비워 둔다** — 그러면 CLI 가 그 절 맨 앞에
+「chair 가 정한 것 · 사용자가 지시한 적 없다」를 박고, 다음 세션은 실행 전에 확인한다.
+지어낸 UID 로 채우지 마라.
 쓰기 대상 경로는 `next_step_targets: ["relative/path"]` 배열로 별도 넘긴다. CLI 는 이를
 `exact_target_paths` frontmatter 구조로 보존할 뿐 Exact 산문을 다시 읽어 파싱하지 않는다.
 **대장 처분과 집합이 같아야 한다**(`next_step_ledger_mismatch`) — 대장을
@@ -482,14 +487,14 @@ git_dirty/writer_model — 어댑터가 작성 안 함, CLI 가 실측해 생성
   python -m handoff_cli --cwd "$PWD" resume --topic <t> --directives-only
   ```
 
-  7블록 평문이 그대로 나온다. JSON 을 받아 파일로 빼서 나눠 읽지 않는다 — 판정에 쓰는
+  재개 지시 평문이 그대로 나온다. JSON 을 받아 파일로 빼서 나눠 읽지 않는다 — 판정에 쓰는
   절(`Decisions`·`Open`·`Blockers`·`Verification`)은 블록 2·4 에 원문으로 이미 실려 있다.
   블록 5 가 이름을 댄 외부 문서만 추가로 연다.
 
   블록 2는 그대로 따르고, 블록 3은 현재 지시로 올리지 않으며, 블록 4는 재확인한다.
   지시문을 요약·생략하지 않는다.
 
-  **블록 6의 복명 ①~⑧까지가 재개다 — 거기서 멈추고 사용자 지시를 기다린다.** 블록 2의
+  **블록 6의 복명을 끝까지 채우는 것이 재개다 — 칸 수는 그 블록이 말한다. 거기서 멈추고 사용자 지시를 기다린다.** 블록 2의
   `Exact Next Step` 도 실행하지 않는다. 확인하겠다고 테스트를 돌리거나 코드를 뒤지지 않는다.
   git drift·broken 포인터 같은 어긋남은 블록 4에 실려 나오며, 보이면 **먼저 보고**하고
   어느 상태에서 이어갈지 확인한다. 본문 전체·`prev` 체인이 필요하면 그때만
