@@ -1859,6 +1859,11 @@ def cmd_last_saved(cwd: str, session: str, root: str | None = None,
 
     못 찾으면 **오류가 아니라 `topic: None`** 이다. 아직 한 번도 저장하지 않은
     세션은 정상 상태이지 실패가 아니다.
+
+    찾으면 그 저장본의 `work_id`(조직이 이 작업을 부르는 이름)도 함께 낸다.
+    소비자는 세션 아이디밖에 없는 자리에서 그것을 묻는데, 남은 경로가 이것뿐이다
+    — 토픽에서 유추하는 길은 사용자가 기각했고(토픽은 AI 가 짓는 파일 축이다),
+    소비자가 직접 frontmatter 를 읽는 길은 표기가 바뀔 때 조용히 어긋난다.
     """
     resolved = repo.resolve_root(cwd, root)
     wanted = (session or "").strip()
@@ -1888,7 +1893,12 @@ def cmd_last_saved(cwd: str, session: str, root: str | None = None,
             if best is None or (created, mtime) > best[0]:
                 best = ((created, mtime), topic,
                         {"archived": archived, "source": _rel(resolved, path),
-                         "created": front.get("created") or None})
+                         "created": front.get("created") or None,
+                         # 소비자가 세션 아이디 하나로 「이 세션이 무슨 작업인가」까지
+                         # 받는다. 이미 파싱한 frontmatter 에서 한 줄 더 꺼낼 뿐이라
+                         # 새 상태를 만들지 않는다. 미선언이면 `None` 이고 `found` 는
+                         # 그대로 참이다 — 선언하지 않은 저장본은 정상이지 실패가 아니다.
+                         "work_id": _front_value(front, "work_id")})
 
     name = repo.project_name(resolved)
     payload = ({"session": wanted, "topic": None, "found": False, "read_only": True}

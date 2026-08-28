@@ -71,6 +71,10 @@ CLI 가 저장 후 아래 보고를 돌려준다(어댑터는 그대로 출력):
 실어 나른다. **토픽 이름에서 유추하지 않는다** — 토픽은 파일 축이라 한 작업이 여러 토픽에
 흩어지고 작업이 아닌 토픽도 있다. 값이 없으면 「미상」으로 뜬다. 거짓보다 미상이 낫다.
 
+세션 아이디밖에 없는 자리(훅 등)에서는 `last-saved --session <id>` 가 토픽과 함께 그
+`work_id` 를 낸다 — 저장본에 이미 있는 값을 읽어 낼 뿐이라 아무것도 쓰지 않는다.
+적어 두지 않은 저장본이면 `work_id` 가 `null` 이고, 조회 자체는 그대로 성공한다.
+
 저장된 정본(`.handoff/login-api/…md`)은 이렇게 생겼다:
 
 ```markdown
@@ -129,7 +133,7 @@ python -m handoff_cli --cwd <cwd> resume --topic <t> [--directives-only]  # 재�
 python -m handoff_cli --cwd <cwd> archive --topic <t>
 python -m handoff_cli --cwd <cwd> decisions [--id <ID>]    # 결정 색인 — 생사·관계·체인(읽기 전용)
 python -m handoff_cli --cwd <cwd> negative       # 부정 색인 — 실패·폐기(읽기 전용)
-python -m handoff_cli --cwd <cwd> last-saved --session <id>  # 그 세션이 마지막으로 저장한 토픽
+python -m handoff_cli --cwd <cwd> last-saved --session <id>  # 그 세션이 마지막으로 저장한 토픽·work_id
 python -m handoff_cli --cwd <cwd> reindex        # 기존 상세 정본에서 집계 인덱스 백필
 ```
 
