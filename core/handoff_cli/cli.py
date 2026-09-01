@@ -424,28 +424,64 @@ def _conflict_report(topic: str, project_name: str, detail_path: str, other: str
     return "\n".join(lines)
 
 
-def _save_transcript_path(payload: dict, cwd: str):
-    """저장 payload 로부터 트랜스크립트 경로를 얻는다. 없으면 None (조용히)."""
+def _save_transcripts(payload: dict, cwd: str) -> tuple[list, list[dict]]:
+    """저장 payload 가 가리키는 전사 **전부**와 못 이은 사유. 없으면 `([], [])`.
+
+    **저장 경로에서 전사를 여는 자리는 여기 하나다.** 대장·저작 모델·손상 줄 계수·
+    대화 꼬리가 각각 파일을 열던 것을 모았다. 넷이 따로 열면 「이 세션의 전사가
+    무엇인가」가 바뀔 때 한 곳씩 고치게 되고, **이 코드가 그 방식으로 같은 실패를
+    다섯 번 냈다** — 큐 채널 미독(6건 유실) · `content` 배열 형태 미독 · 큐 채널이
+    대화 꼬리에서만 빠짐(7건) · 압축 재개문이 변곡점을 지어냄. 자동압축이 대화를
+    가르는 것이 여섯 번째다.
+
+    세션 아이디가 없거나 전사를 못 찾으면 **조용히 빈 목록**이다 — 저장을 막지
+    않는다. 전수 보증이 없다는 사실은 frontmatter 의 `writer_session: null` 이
+    그대로 드러낸다(어댑터 규율 8항).
+    """
     session_id = payload.get("session_id")
     if not session_id:
-        return None
+        return [], []
     try:
-        return transcript_mod.derive_transcript_path(
+        path = transcript_mod.derive_transcript_path(
             session_id, cwd, payload.get("transcript"))
     except transcript_mod.TranscriptNotFound:
-        return None
+        return [], []
+    return transcript_mod.compact_chain(
+        path, fmt=payload.get("transcript_format", "claude"))
 
 
-def _measured_writer_model(payload: dict, cwd: str) -> str | None:
-    """저작 모델을 트랜스크립트에서 실측한다. 대장을 위해 이미 읽는 파일이라 공짜다."""
-    path = _save_transcript_path(payload, cwd)
-    if path is None:
+def _measured_writer_model(chain: list, payload: dict) -> str | None:
+    """저작 모델을 트랜스크립트에서 실측한다. 대장을 위해 이미 읽는 파일이라 공짜다.
+
+    **체인의 마지막 전사만 본다.** 「마지막 값을 쓴다 — 저장을 실행한 모델이
+    저자」가 그 함수의 계약이므로, 앞 구간까지 넓히면 오히려 계약이 깨진다.
+    목록을 받는 것과 어디까지 보는가는 다른 축이다.
+    """
+    if not chain:
         return None
     return transcript_mod.measure_writer_model(
-        path, payload.get("transcript_format", "claude"))
+        chain[-1], payload.get("transcript_format", "claude"))
 
 
-def _save_manifest(payload: dict, cwd: str) -> list[dict]:
+def _save_reading(chain: list, payload: dict) -> dict:
+    """저장이 쓰는 전사 판독 — 대장·손상 줄 수·못 읽은 파일을 **한 번에** 낸다.
+
+    셋을 따로 구하면 읽기 실패 처리가 갈린다. 실제로 갈렸었다 — 대장은 예외를 올려
+    **저장 명령 전체를 죽였고**(앞 전사가 잠기면 핸드오프를 아예 못 남긴다), 손상 줄
+    계수는 못 읽은 파일을 0으로 세어 게이트를 통과시켰고, 대화 꼬리는 조용히 건너뛰어
+    결손을 감췄다. 한 자리에서 읽으면 **못 읽은 것이 이름으로 남고** 소비자들이 같은
+    범위를 본다.
+    """
+    if not chain:
+        return {"rows": [], "malformed": 0, "unreadable": []}
+    return transcript_mod.read_manifest(
+        chain,
+        transcript_mod.parse_ts(payload.get("covers_from")),
+        fmt=payload.get("transcript_format", "claude"),
+    )
+
+
+def _save_manifest(chain: list, payload: dict) -> list[dict]:
     """저장 시점에 **CLI 가 직접** 발화 대장을 다시 뽑는다. 없으면 빈 목록.
 
     어댑터가 개수를 신고하게 두지 않는 이유는 하나다 — 신고는 이 프로젝트에서 세 번 깨졌다
@@ -454,15 +490,12 @@ def _save_manifest(payload: dict, cwd: str) -> list[dict]:
     `session_id` 가 없으면(옛 어댑터·런타임 미제공) 대장 검사와 밀도 줄을 **건너뛴다** —
     저장을 막지는 않는다. 전수 보증이 없다는 사실은 frontmatter 의 `writer_session: null` 이
     그대로 드러낸다.
+
+    **어댑터가 `utterances` 로 받는 대장과 같은 범위를 봐야 한다.** 둘이 갈리면
+    같은 번호가 서로 다른 발화를 가리키고, 코어가 넣는 지문과 어댑터가 넘긴 처분이
+    딴 발화 얘기가 된다 — 실측으로 60건 대 262건까지 벌어졌다.
     """
-    path = _save_transcript_path(payload, cwd)
-    if path is None:
-        return []
-    return transcript_mod.extract_utterances(
-        path,
-        transcript_mod.parse_ts(payload.get("covers_from")),
-        fmt=payload.get("transcript_format", "claude"),
-    )
+    return _save_reading(chain, payload)["rows"]
 
 
 def _merge_ledger(manifest: list[dict], disposals: list) -> list[dict]:
@@ -1227,6 +1260,17 @@ def cmd_save(payload: dict, cwd: str, global_root: str | None = None) -> dict:
     if repo.project_id_uncommitted(root):
         warnings.append(messages.msg("warn_project_id_uncommitted", lang))
 
+    # **여기서 한 번 구해 아래 소비자 넷이 나눠 쓴다** — 대장 · 저작 모델 ·
+    # 손상 줄 계수 · 대화 꼬리. 각자 구하면 체인 탐색이 네 번 돌고, 무엇보다
+    # 넷이 서로 다른 범위를 볼 수 있다.
+    transcripts, transcript_gaps = _save_transcripts(payload, cwd)
+    warnings.extend(
+        messages.msg(_CHAIN_GAP_MESSAGES.get(gap.get("reason"),
+                                             "warn_compact_chain_incomplete"),
+                     lang, after=gap["after"],
+                     logical_parent=gap["logical_parent"])
+        for gap in transcript_gaps)
+
     git = repo.git_meta(root)
     now = repo.now_local()
     created_iso = repo.iso8601(now)
@@ -1265,7 +1309,7 @@ def cmd_save(payload: dict, cwd: str, global_root: str | None = None) -> dict:
         # 이 이름으로 번역해 넘기고, 코어는 이 이름만 안다(승인 5: 표면층이 걸러서 넘긴다).
         # **실측이 정본, 신고가 폴백이다.** 순서를 뒤집으면 안 된다 — E4 에서 신고값
         # `claude-opus-5` 가 실제 저작자 `claude-sonnet-5` 와 달랐다(트랜스크립트 실측).
-        "writer_model": (_measured_writer_model(payload, cwd)
+        "writer_model": (_measured_writer_model(transcripts, payload)
                          or payload.get("writer_model") or payload.get("model")),
         "writer_effort": payload.get("writer_effort") or os.environ.get("HANDOFF_EFFORT"),
         "writer_session": payload.get("session_id") or os.environ.get("HANDOFF_SESSION_ID"),
@@ -1304,7 +1348,8 @@ def cmd_save(payload: dict, cwd: str, global_root: str | None = None) -> dict:
             sections[key] = detail.normalize_decision_ids_in_block(
                 sections[key], name, topic)
 
-    manifest = _save_manifest(payload, cwd)
+    reading = _save_reading(transcripts, payload)
+    manifest = reading["rows"]
     ledger = _merge_ledger(manifest, payload.get("utterance_ledger") or [])
 
     # ── 결정: 인용이 권위, 해석은 비권위 (D-8) ──────────────────────────
@@ -1409,17 +1454,21 @@ def cmd_save(payload: dict, cwd: str, global_root: str | None = None) -> dict:
 
     # 트랜스크립트에 파싱 불가능한 줄이 있으면 **대장이 불완전할 수 있다.** 그대로 두면
     # 「모든 UID 를 처분했다」가 100% 로 나와 보증이 거짓이 된다 — 소리 나게 막는다.
-    tpath = _save_transcript_path(payload, cwd)
+    tfmt = payload.get("transcript_format", "claude")
     # 대화 꼬리(Recent Dialogue)는 페이로드 입력이 없다 — 전부 CLI 실측.
-    dialogue = (transcript_mod.extract_dialogue_tail(
-                    tpath, payload.get("transcript_format", "claude"))
-                if tpath is not None else [])
-    if tpath is not None:
-        broken = transcript_mod.count_malformed(
-            tpath, payload.get("transcript_format", "claude"))
-        if broken:
-            schema_problems.append({"code": "transcript_corrupt", "uid": "",
-                                    "found": f"{broken}줄"})
+    tail = (transcript_mod.read_dialogue_tail(transcripts, tfmt)
+            if transcripts else {"rows": [], "unreadable": []})
+    dialogue = tail["rows"]
+    # 손상 줄은 대장을 읽을 때 **같은 읽기에서** 세어졌다 — 따로 훑으면 대장이 본
+    # 범위와 다른 범위를 셀 수 있고 260MB 체인을 한 번 더 읽는다(실측 0.62초).
+    if reading["malformed"]:
+        schema_problems.append({"code": "transcript_corrupt", "uid": "",
+                                "found": f"{reading['malformed']}줄"})
+    # **못 읽은 전사는 이름으로 알린다.** 조용히 물러서면 앞 구간이 빠진 대장이
+    # 전수로 보고되고, 저장은 성공한 것처럼 보인다.
+    for member in dict.fromkeys(reading["unreadable"] + tail["unreadable"]):
+        warnings.append(messages.msg("warn_compact_chain_unreadable", lang,
+                                     after=member, logical_parent=""))
 
     if schema_problems and not payload.get("force_schema"):
         out = _result("save", root, name, project_id,
@@ -1703,6 +1752,14 @@ def _previous_save_boundary(root: str, topic: str) -> tuple[str | None, int, str
     return _val("created"), last_number, _val("writer_session")
 
 
+#: 끊긴 이음매의 사유별 문구. 없는 사유는 일반 문구로 떨어진다 — 새 사유가 생겨도
+#: 경고가 사라지지 않게(조용해지지 않게) 기본값 쪽이 안전한 방향이다.
+_CHAIN_GAP_MESSAGES = {
+    "predecessor_missing": "warn_compact_chain_broken",
+    "unreadable": "warn_compact_chain_unreadable",
+}
+
+
 def cmd_utterances(cwd: str, session_id: str, root: str | None = None,
                    transcript: str | None = None, topic: str | None = None,
                    since: str | None = None, fmt: str = "claude",
@@ -1745,8 +1802,20 @@ def cmd_utterances(cwd: str, session_id: str, root: str | None = None,
     prev_created, prev_last_number, prev_session = (None, 0, None)
     if topic:
         prev_created, prev_last_number, prev_session = _previous_save_boundary(resolved, topic)
+    # **압축 체인을 먼저 구한다** — 아래 `same_session` 판정과 대장 읽기가 둘 다 쓴다.
+    # 자동압축이 대화를 여러 전사로 가르면 `--session` 이 가리키는 파일에는 뒷부분만
+    # 있고 앞부분은 옛 파일에 남는다. 안 읽으면 대장이 뒷부분만 덮고도 「세션 전체」라고
+    # 말한다(실측 277건 중 54건 — madi r75e).
+    chain, chain_gaps = transcript_mod.compact_chain(path, fmt=fmt)
     # 같은 세션이 이미 이 토픽에 저장했다 = 중복이 아니라 **델타 2회차**다.
-    same_session = bool(prev_session) and prev_session == session_id
+    #
+    # **문자열 동일성만 보면 안 된다.** 자동압축이 돌면 같은 대화인데 세션 아이디가
+    # 바뀐다. 그때 `full` 로 갈리면 직전 저장에서 이미 정리한 앞부분이 통째로 다시
+    # 실리고 두 저장본의 U-ID 가 충돌한다 — 「두 번째 저장본의 대장이 U0043… 로
+    # 시작해 델타임이 드러난다」가 성립하지 않는다. 체인에 속한 전사면 같은 대화다.
+    chain_sessions = {member.stem for member in chain}
+    same_session = bool(prev_session) and (prev_session == session_id
+                                           or prev_session in chain_sessions)
 
     if scope not in ("auto", "delta", "full"):
         raise ValueError(f"알 수 없는 scope: {scope} (auto|delta|full)")
@@ -1762,8 +1831,20 @@ def cmd_utterances(cwd: str, session_id: str, root: str | None = None,
         boundary = None
     # `full` 이면 번호를 1부터 다시 센다 — 이어 쓸 것이 없다.
     continue_from = prev_last_number if resolved_scope == "delta" else 0
-    rows = transcript_mod.extract_utterances(
-        path, transcript_mod.parse_ts(boundary), fmt=fmt)
+    # 체인(경계 줄의 `logicalParentUuid` 로 찾은 앞 전사들)을 **오래된 것부터** 이어
+    # 읽는다. **못 읽은 것만 빼고 나머지는 읽는다.** 예외로 받아 통째로 물러서면 읽을 수
+    # 있는 전사까지 버린다 — 실측으로 3단 체인에서 중간 하나가 잠기자 어댑터는
+    # 3세대만 받고 저장은 1·3세대를 받아, 이 라운드가 세운 「두 대장이 같다」가
+    # 다시 깨졌다. 저장 경로와 **같은 판독 함수**를 쓴다.
+    reading = transcript_mod.read_manifest(
+        chain, transcript_mod.parse_ts(boundary), fmt=fmt)
+    rows = reading["rows"]
+    if reading["unreadable"]:
+        lost = set(reading["unreadable"])
+        chain_gaps = chain_gaps + [
+            {"reason": "unreadable", "logical_parent": "", "trigger": None,
+             "after": member} for member in reading["unreadable"]]
+        chain = [member for member in chain if member.name not in lost]
     # 원문(`text`)은 **돌려주지 않는다.** 저장 시점의 세션은 이미 그 발화를 컨텍스트에
     # 들고 있으므로(핸드오프는 자동압축 전에 한다) 원문을 되돌려주는 것은 순수 중복이고,
     # 대장의 일은 「내용 공급」이 아니라 「전수 열거」다.
@@ -1774,9 +1855,26 @@ def cmd_utterances(cwd: str, session_id: str, root: str | None = None,
     rows = [{"uid": r["uid"], "kind": r["kind"], "ts": r["ts"],
              "excerpt": transcript_mod.excerpt(r["text"])} for r in rows]
     user_rows = [r for r in rows if r["kind"] == "user"]
-    return _result("utterances", resolved, name, repo.read_project_id(resolved), [], {
+    # 이음매가 끊겼으면 **소리 낸다.** 이 자리를 조용히 두면 부분 커버리지가 전수로
+    # 보고되고, 그것이 이 대장 전체를 무의미하게 만든다.
+    lang = messages.resolve_lang(None)
+    # 사유가 달라도 결론은 하나다 — 앞 구간이 이 대장에 없다. 다만 **무엇을 해야
+    # 하는지**가 달라서 문구를 가른다(옛 전사를 직접 주기 / 읽기 권한을 보기).
+    warnings = [messages.msg(_CHAIN_GAP_MESSAGES.get(gap.get("reason"),
+                                                    "warn_compact_chain_incomplete"),
+                             lang, after=gap["after"],
+                             logical_parent=gap["logical_parent"])
+                for gap in chain_gaps]
+    return _result("utterances", resolved, name, repo.read_project_id(resolved), warnings, {
         "found": True,
         "transcript": str(path),
+        # 실제로 읽은 전사 전부(오래된 것부터). 파일 하나면 압축이 안 걸린 세션이다.
+        "transcript_chain": [p.name for p in chain],
+        # **커버리지는 `scope` 와 다른 축이다.** `scope` 는 「어디부터 덮기로 했나」이고
+        # 이것은 「덮기로 한 것을 실제로 다 읽었나」다. 끊긴 이음매가 있으면 `partial`
+        # 이며, 그때 `scope: "full"` 을 전수로 읽으면 안 된다.
+        "coverage": "partial" if chain_gaps else "complete",
+        "coverage_gaps": chain_gaps,
         "session_id": session_id,
         "format": fmt,
         # 델타 저장 지원: 이 대장이 어느 시점 이후인지, 번호를 몇 번부터 이어야 하는지.

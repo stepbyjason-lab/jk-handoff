@@ -126,6 +126,8 @@ git 상태(branch·full SHA·dirty)는 어댑터가 아니라 **CLI 가 실측**
 어댑터(Claude/Codex)는 직접 파일을 쓰지 않고 아래 CLI 에 위임한다.
 
 ```bash
+python -m handoff_cli --cwd <cwd> utterances --session <id> --topic <t> [--delta|--full]
+                                                 # 발화 대장 — 저장 전에 먼저 받는다
 python -m handoff_cli --cwd <cwd> save           # JSON 페이로드를 stdin 또는 --input <file>
 python -m handoff_cli --cwd <cwd> list [--all]   # --all 로 archived 포함
 python -m handoff_cli --cwd <cwd> find --keyword <k> [--global-scope <root>...]
@@ -139,6 +141,18 @@ python -m handoff_cli --cwd <cwd> reindex        # 기존 상세 정본에서 �
 
 `save` 는 저장 후 결과에 `report`(사용자에게 보여줄 완성 보고)와 `resume_prompt`(새 세션에
 그대로 붙여넣어 이어가는 프롬프트)를 함께 돌려준다. 어댑터는 `report` 를 그대로 출력한다.
+
+`utterances` 는 세션의 **사용자 발화 전부**에 `U0001…` 번호를 매겨 돌려준다. 어댑터는 저장 전에
+이것을 먼저 받아 모든 UID 를 어느 절로 보냈는지 처분하고, `save` 가 그 처분을 검사한다 —
+빠뜨리면 흔적이 남게 하는 장치다.
+
+**전사 하나가 곧 세션 하나는 아니다.** 호스트는 컨텍스트가 차면 대화를 새 전사 파일로 잘라
+옮기므로(Claude Code 자동압축), 파일 하나만 읽으면 뒷부분만 덮은 대장이 「세션 전체」로 나간다.
+CLI 는 잘린 파일 머리의 이음매를 따라 앞부분까지 거슬러 올라가 한 대장으로 잇고, 실제로 읽은
+파일을 `transcript_chain` 으로 낸다. 앞 전사가 지워졌거나 잠겨 못 이으면 `coverage` 가
+`partial` 이 되고 경고가 붙는다 — **`scope` 와 다른 축이다.** `scope` 는 「어디부터 덮기로
+했나」이고 `coverage` 는 「덮기로 한 것을 실제로 다 읽었나」라서, `scope: "full"` 이면서
+`coverage: "partial"` 일 수 있다.
 
 보고·경고 메시지 언어는 `payload.lang > 환경변수 HANDOFF_LANG > OS 로케일 > en` 순으로
 결정된다(현재 `ko`/`en`). 어댑터가 대화 언어를 `lang` 으로 넘기는 것이 기본이고, 아무 설정이

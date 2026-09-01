@@ -121,6 +121,22 @@ _MESSAGES: dict[str, dict[str, str]] = {
             "빈 대장을 쓰면 「전수 처분」이 거짓이 되므로 진행하지 않는다 — "
             "`--transcript <경로>` 로 직접 주거나 호스트 경로 규칙을 갱신하라."
         ),
+        "warn_compact_chain_broken": (
+            "대장 부분 커버리지: {after} 는 자동압축으로 갈린 뒷부분인데, 앞부분 전사를 "
+            "못 찾았다(직전 메시지 {logical_parent}). 앞 구간의 발화는 이 대장에 없다 — "
+            "「세션 전체를 정리했다」고 쓰지 마라. 저장본에 덮은 범위를 명시하고, 옛 전사가 "
+            "남아 있으면 `--transcript <경로>` 로 직접 줘라."
+        ),
+        "warn_compact_chain_incomplete": (
+            "대장 부분 커버리지: {after} 는 자동압축으로 갈린 뒷부분인데, 앞 구간까지 "
+            "거슬러 올라가지 못했다. 앞 구간의 발화는 이 대장에 없다 — 「세션 전체를 "
+            "정리했다」고 쓰지 마라. 저장본에 덮은 범위를 명시하라."
+        ),
+        "warn_compact_chain_unreadable": (
+            "대장 부분 커버리지: {after} 의 앞 전사를 찾았으나 **읽지 못했다**(잠겼거나 "
+            "권한이 없거나 손상). 앞 구간의 발화는 이 대장에 없다 — 「세션 전체를 "
+            "정리했다」고 쓰지 마라. 그 파일을 읽을 수 있게 한 뒤 다시 받아라."
+        ),
         "incidents_default": "- 기록된 사고 없음. **0건은 의심 신호다** — 정말 없었는지 다시 본다.",
         "incidents_note": (
             "> **만들어 놓은 것이 의도대로 안 돌아간 것.** 코드 결함·절차 위반·잘못된 측정·"
@@ -439,6 +455,25 @@ _MESSAGES: dict[str, dict[str, str]] = {
             "Writing an empty manifest would make the \"account for every utterance\" "
             "guarantee false, so this stops — pass `--transcript <path>` or update the "
             "host path rule."
+        ),
+        "warn_compact_chain_broken": (
+            "Partial manifest coverage: {after} is the tail half of a conversation split "
+            "by auto-compaction, and the earlier transcript was not found (last message "
+            "{logical_parent}). Utterances from that earlier stretch are absent — do not "
+            "claim the whole session was accounted for. State the covered range in the "
+            "handoff, and pass `--transcript <path>` if the old transcript still exists."
+        ),
+        "warn_compact_chain_incomplete": (
+            "Partial manifest coverage: {after} is the tail half of a conversation "
+            "split by auto-compaction, and the walk back to the earlier stretch did "
+            "not complete. Those utterances are absent — do not claim the whole "
+            "session was accounted for. State the covered range in the handoff."
+        ),
+        "warn_compact_chain_unreadable": (
+            "Partial manifest coverage: the earlier transcript for {after} was found "
+            "but could not be read (locked, no permission, or damaged). Those "
+            "utterances are absent — do not claim the whole session was accounted "
+            "for. Make that file readable and take the manifest again."
         ),
         "incidents_default": (
             "- No incidents recorded. **Zero is a suspicious signal** — look again."
