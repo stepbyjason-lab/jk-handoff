@@ -464,17 +464,17 @@ def _measured_writer_model(chain: list, payload: dict) -> str | None:
 
 
 def _save_reading(chain: list, payload: dict) -> dict:
-    """저장이 쓰는 전사 판독 — 대장·손상 줄 수·못 읽은 파일을 **한 번에** 낸다.
+    """저장이 쓰는 전사 판독 — 대장·꼬리·손상·읽기 실패를 **한 번에** 낸다.
 
-    셋을 따로 구하면 읽기 실패 처리가 갈린다. 실제로 갈렸었다 — 대장은 예외를 올려
+    넷을 따로 구하면 읽기 실패 처리가 갈린다. 실제로 갈렸었다 — 대장은 예외를 올려
     **저장 명령 전체를 죽였고**(앞 전사가 잠기면 핸드오프를 아예 못 남긴다), 손상 줄
     계수는 못 읽은 파일을 0으로 세어 게이트를 통과시켰고, 대화 꼬리는 조용히 건너뛰어
     결손을 감췄다. 한 자리에서 읽으면 **못 읽은 것이 이름으로 남고** 소비자들이 같은
     범위를 본다.
     """
     if not chain:
-        return {"rows": [], "malformed": 0, "unreadable": []}
-    return transcript_mod.read_manifest(
+        return {"rows": [], "tail": [], "malformed": 0, "unreadable": []}
+    return transcript_mod.read_session(
         chain,
         transcript_mod.parse_ts(payload.get("covers_from")),
         fmt=payload.get("transcript_format", "claude"),
@@ -516,6 +516,8 @@ def _merge_ledger(manifest: list[dict], disposals: list) -> list[dict]:
         out.append({
             "uid": entry["uid"],
             "kind": entry["kind"],
+            # 대화 꼬리와 잇는 값. 렌더에는 안 쓰이지만 요약 구간 계산이 쓴다.
+            "record": entry.get("record"),
             "excerpt": transcript_mod.excerpt(entry["text"]),
             # 공백을 접은 길이. `없음` 처분에 이유가 필요한지 가르는 값이라 검사에 쓴다.
             "length": len(" ".join(entry["text"].split())),
@@ -843,8 +845,14 @@ def _split_decisions(payload: dict, project: str, topic: str, manifest: list[dic
             for r in (entry.get("relations") or []) if isinstance(r, dict)]
         for uid in uids:
             if uid not in human_uids:
-                problems.append({"code": "decision_source_unknown",
-                                 "uid": entry["id"], "found": uid})
+                # **두 원인을 가른다.** 「대장에 없는 UID(오타)」와 「대장에 있지만
+                # 사람이 친 발화가 아님」은 고치는 방법이 정반대다 — 앞은 번호를
+                # 바로잡고, 뒤는 그 발화를 출처로 쓰겠다는 판단 자체를 접어야 한다.
+                # 한 이름으로 묶으면 어댑터가 번호부터 의심해 헛돌다 강등된다(규율 7).
+                problems.append({
+                    "code": ("decision_source_unknown" if uid not in manifest_by_uid
+                             else "decision_source_not_human"),
+                    "uid": entry["id"], "found": uid})
         (user_rows if uids else chair_rows).append(entry)
 
     # 인용표: UID → 발화 원문. **모델이 옮겨 적지 않는다** — 옮겨 적다 바뀌면
@@ -907,7 +915,10 @@ def _split_standing(payload: dict, project: str, topic: str,
                 # **결정과 다른 코드를 쓴다.** 규율의 미확인 출처는 오염 집합에 들어가
                 # 승계·주입을 막아야 하는데, `decision_source_unknown` 을 쓰면 그 판정에
                 # 안 걸려 출처가 존재하지 않는 규율이 다음 세션의 지시로 나갔다(외부 리뷰).
-                problems.append({"code": "standing_source_unknown",
+                # 결정과 같은 이유로 **두 원인을 가르되**, 새 코드도 오염으로 센다.
+                problems.append({"code": ("standing_source_unknown"
+                                          if not any(r["uid"] == uid for r in manifest)
+                                          else "standing_source_not_human"),
                                  "uid": entry["id"], "found": uid})
         # ID 는 승계·폐기가 겨누는 **유일한 손잡이**다. 형식이 어긋나거나 겹치면 어느
         # 항목을 죽이라는 것인지 정해지지 않는다 — 저장 전에 막는다.
@@ -947,6 +958,7 @@ def _split_rendered_items(block: str) -> list[tuple[str, str]]:
 _STANDING_TAINT_CODES = frozenset({
     "standing_source_missing",
     "standing_source_unknown",
+    "standing_source_not_human",
     "standing_id_malformed",
     "standing_id_duplicate",
     "standing_ledger_mismatch",
@@ -1454,11 +1466,10 @@ def cmd_save(payload: dict, cwd: str, global_root: str | None = None) -> dict:
 
     # 트랜스크립트에 파싱 불가능한 줄이 있으면 **대장이 불완전할 수 있다.** 그대로 두면
     # 「모든 UID 를 처분했다」가 100% 로 나와 보증이 거짓이 된다 — 소리 나게 막는다.
-    tfmt = payload.get("transcript_format", "claude")
-    # 대화 꼬리(Recent Dialogue)는 페이로드 입력이 없다 — 전부 CLI 실측.
-    tail = (transcript_mod.read_dialogue_tail(transcripts, tfmt)
-            if transcripts else {"rows": [], "unreadable": []})
-    dialogue = tail["rows"]
+    # 대화 꼬리(Recent Dialogue)는 페이로드 입력이 없다 — 대장과 같은 판독 스냅샷에서
+    # 전부 CLI 가 실측한다. 앞 판은 여기서 다시 읽어, 그 사이 파일이 사라지면 대장과
+    # 꼬리가 서로 다른 세션을 가리켰다.
+    dialogue = reading["tail"]
     # 손상 줄은 대장을 읽을 때 **같은 읽기에서** 세어졌다 — 따로 훑으면 대장이 본
     # 범위와 다른 범위를 셀 수 있고 260MB 체인을 한 번 더 읽는다(실측 0.62초).
     if reading["malformed"]:
@@ -1466,7 +1477,7 @@ def cmd_save(payload: dict, cwd: str, global_root: str | None = None) -> dict:
                                 "found": f"{reading['malformed']}줄"})
     # **못 읽은 전사는 이름으로 알린다.** 조용히 물러서면 앞 구간이 빠진 대장이
     # 전수로 보고되고, 저장은 성공한 것처럼 보인다.
-    for member in dict.fromkeys(reading["unreadable"] + tail["unreadable"]):
+    for member in reading["unreadable"]:
         warnings.append(messages.msg("warn_compact_chain_unreadable", lang,
                                      after=member, logical_parent=""))
 
@@ -1836,7 +1847,7 @@ def cmd_utterances(cwd: str, session_id: str, root: str | None = None,
     # 있는 전사까지 버린다 — 실측으로 3단 체인에서 중간 하나가 잠기자 어댑터는
     # 3세대만 받고 저장은 1·3세대를 받아, 이 라운드가 세운 「두 대장이 같다」가
     # 다시 깨졌다. 저장 경로와 **같은 판독 함수**를 쓴다.
-    reading = transcript_mod.read_manifest(
+    reading = transcript_mod.read_session(
         chain, transcript_mod.parse_ts(boundary), fmt=fmt)
     rows = reading["rows"]
     if reading["unreadable"]:
@@ -1852,9 +1863,18 @@ def cmd_utterances(cwd: str, session_id: str, root: str | None = None,
     # 실측된 사고: 원문까지 실어 55KB(≈18k 토큰)를 반환했고, 컨텍스트 96% 세션에서 대장을
     # 부르자 **그 자리에서 자동압축이 돌았다** — 대장이 압축을 막으려고 만든 장치인데
     # 스스로 압축을 일으켰다. 원문을 빼면 같은 세션이 20KB 로 떨어진다.
+    manifest_rows = rows
     rows = [{"uid": r["uid"], "kind": r["kind"], "ts": r["ts"],
              "excerpt": transcript_mod.excerpt(r["text"])} for r in rows]
     user_rows = [r for r in rows if r["kind"] == "user"]
+    # **요약이 덮을 구간을 여기서도 낸다.** 저장은 이 값을 이미 계산해 본문에 박지만,
+    # 그것은 **저장이 끝난 뒤**라 요약을 쓰는 쪽은 볼 수 없다. 실측 사고: 그래서 한
+    # 저장본이 같은 구간을 요약과 원문 꼬리에 두 번 실었다(이중 가중). 저장과 **같은
+    # 함수·같은 꼬리 조건**을 쓰므로 입력이 같으면 값이 같다.
+    # 꼬리도 위 판독 결과를 그대로 쓴다. 앞 판은 대장을 읽고 체인을 거른 뒤 다시 읽어,
+    # 두 판독 사이 파일 상태가 바뀌면 같은 U-ID 가 서로 다른 발화를 가리켰다. 한 명령의
+    # 대장·꼬리·요약 집합은 반드시 이 한 스냅샷에서 함께 나온다.
+    recap_span = detail.recap_span(manifest_rows, reading["tail"])
     # 이음매가 끊겼으면 **소리 낸다.** 이 자리를 조용히 두면 부분 커버리지가 전수로
     # 보고되고, 그것이 이 대장 전체를 무의미하게 만든다.
     lang = messages.resolve_lang(None)
@@ -1875,6 +1895,12 @@ def cmd_utterances(cwd: str, session_id: str, root: str | None = None,
         # 이며, 그때 `scope: "full"` 을 전수로 읽으면 안 된다.
         "coverage": "partial" if chain_gaps else "complete",
         "coverage_gaps": chain_gaps,
+        # 요약이 덮을 구간의 경계. `null` 이면 꼬리와 겹치는 자리를 못 찾았다는 뜻이고
+        # 그때는 전 구간을 요약한다 — 저장본 문면과 같은 규칙이다.
+        # **요약이 덮어야 할 UID 목록.** 비면 요약을 쓰지 않는다 — 대장이 통째로 아래
+        # 대화 꼬리에 원문으로 있다는 뜻이다. 값 하나로 「구간·전체·없음」 셋을 눌러
+        # 담으려다 조건이 판마다 늘었고, 목록으로 두면 세 경우가 저절로 갈린다.
+        "recap_span": recap_span,
         "session_id": session_id,
         "format": fmt,
         # 델타 저장 지원: 이 대장이 어느 시점 이후인지, 번호를 몇 번부터 이어야 하는지.

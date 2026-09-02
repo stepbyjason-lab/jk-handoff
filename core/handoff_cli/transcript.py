@@ -9,7 +9,8 @@
 무엇이 「발화」인가 — 판단이 아니라 형식으로 가른다:
     - `message.content` 가 **문자열**이면 사용자가 친(또는 붙여넣은) 발화다.
     - `content` 가 `tool_result` 블록 리스트면 도구 출력이다 — 발화가 아니다.
-    - `isMeta` 는 스킬·시스템 주입이다 — 발화가 아니다.
+    - `isMeta` 는 스킬·시스템 주입이라 발화가 아니다. **다만 다른 세션이 보낸 발화도
+      그 표시를 달고 온다** — 본문의 구조 태그로 가려 `kind="peer"` 로 담는다.
     - 하네스가 넣는 알림(`[SYSTEM NOTIFICATION`·`<task-notification` 등)은 문자열로 오지만
       사람이 친 것이 아니므로 `kind="system"` 으로 **표시하되 버리지 않는다**(버리면 그 판단이
       대장에 안 남는다).
@@ -60,6 +61,46 @@ _SYSTEM_PREFIXES = (
     "PRIOR-SESSION SUMMARY",
     "Previous session summary",
 )
+
+
+#: 다른 세션이 보낸 발화. 호스트가 `role: user` 로 넣지만 **사람이 친 말이 아니다.**
+#:
+#: 이 레코드는 지금까지 대장에서 통째로 빠졌다(실측: 한 세션에 9건). 빠진 이유가 이쪽의
+#: 판정이 아니라 호스트가 붙이는 `isMeta` 였다 — 그 발화를 위해 만들어진 자리가 아니다.
+#: 그래서 **본문의 구조 태그로 가른다.** 태그는 호스트가 그 메시지를 위해 쓰는 것이라
+#: 안내 문구(영어 산문)보다 오래 간다.
+_PEER_TAG = "<cross-session-message"
+_PEER_BLOCK = re.compile(r"<cross-session-message\b([^>]*)>(.*?)</cross-session-message>",
+                         re.S)
+_PEER_NAME = re.compile(r'from-name="([^"]*)"')
+
+
+def _peer_text(content: str) -> str:
+    """래퍼를 벗기고 보낸 쪽 이름을 앞에 세운다.
+
+    벗기지 않으면 지문 120자가 영어 안내문(*"Another Claude session sent a message…"*)과
+    긴 `uds:` 파이프 경로로 다 차서 **무슨 말이 오갔는지가 대장에서 안 보인다.** 대장이
+    시각 순서를 지키는 목적이 맥락이므로, 자리만 있고 내용이 안 보이면 반쪽이다.
+    """
+    block = _PEER_BLOCK.search(content)
+    if not block:
+        return content
+    attrs, body = block.group(1), block.group(2).strip()
+    name = _PEER_NAME.search(attrs)
+    who = (name.group(1).strip() if name else "") or "다른 세션"
+    return f"[{who}] {body}" if body else f"[{who}]"
+
+
+def _peer_row(record: dict) -> dict | None:
+    """다른 세션이 보낸 발화면 대장 행으로, 아니면 `None`."""
+    message = record.get("message") or {}
+    if message.get("role") != "user":
+        return None
+    content = message.get("content")
+    if not isinstance(content, str) or _PEER_TAG not in content:
+        return None
+    return {"ts": record.get("timestamp"), "record": record.get("uuid"),
+            "text": _peer_text(content), "kind": "peer", "role": "user"}
 
 
 def _project_slug(cwd: str) -> str:
@@ -142,13 +183,20 @@ def _claude_rows(handle) -> list[dict]:
             # 「모든 UID 를 처분했다」가 100% 로 나온다 — 보증이 거짓이 되는 자리다.
             malformed += 1
             continue
-        if record.get("isMeta") or record.get("isSidechain"):
+        if record.get("isSidechain"):
+            continue
+        # **`isMeta` 보다 먼저 본다.** 다른 세션이 보낸 발화가 그 표시를 달고 오므로
+        # 뒤에 두면 판정할 기회가 없다 — 지금까지 전량이 그렇게 빠졌다.
+        peer = _peer_row(record)
+        if peer is not None:
+            rows.append(peer)
+            continue
+        if record.get("isMeta"):
             continue
         # 자동압축이 새 전사 머리에 넣는 **요약**은 하네스 산출물이지 발화가 아니다.
-        # 대화 꼬리를 뽑는 쪽(`_claude_dialogue`)은 처음부터 이 필드를 봤는데 대장
-        # 쪽은 안 봤다 — 그동안 걸러진 것은 요약 첫 문장이 `_SYSTEM_PREFIXES` 와
-        # **우연히 맞아서**였다. 그 문구는 호스트가 정하므로 바뀌면 요약 덩어리가
-        # 사용자 발화로 대장에 들어온다.
+        # 앞 판은 대장 판독만 이 필드를 안 봐, 요약 첫 문장이 `_SYSTEM_PREFIXES` 와
+        # **우연히 맞을 때만** 빠졌다. 지금은 `read_session` 한 판독에서 대장과 꼬리를
+        # 함께 만들므로 여기서 한 번 걸러 둘이 같은 입력을 본다.
         if record.get("isCompactSummary"):
             continue
 
@@ -160,18 +208,40 @@ def _claude_rows(handle) -> list[dict]:
                     and attachment.get("commandMode") == "prompt"
                     and isinstance(prompt, str)):
                 rows.append({"ts": record.get("timestamp") or attachment.get("timestamp"),
-                             "uid": record.get("uuid"), "text": prompt})
+                             "record": record.get("uuid"), "text": prompt,
+                             "role": "user"})
             continue
 
         message = record.get("message") or {}
-        if message.get("role") != "user":
-            continue
-        text = _user_text(message.get("content"))
-        if text:
-            # uuid 를 함께 낸다 — 압축이 옮겨 적은 복사본은 **같은 레코드**라 이 값이
-            # 같고, 서로 다른 발화는 본문·시각이 같아도 다르다(`_carry_key`).
-            rows.append({"ts": record.get("timestamp"),
-                         "uid": record.get("uuid"), "text": text})
+        role = message.get("role")
+        if role == "user":
+            text = _user_text(message.get("content"))
+            if text:
+                # 레코드 아이디를 함께 낸다 — 압축이 옮겨 적은 복사본은 **같은 레코드**라
+                # 이 값이 같고, 서로 다른 발화는 본문·시각이 같아도 다르다(`_carry_key`).
+                rows.append({"ts": record.get("timestamp"),
+                             "record": record.get("uuid"), "text": text,
+                             "role": "user"})
+        elif role == "assistant":
+            # **조수의 말도 같은 판독에서 낸다.** 대장은 사람 발화만 쓰지만 대화 꼬리는
+            # 둘 다 쓴다. 따로 읽으면 두 목록을 사후에 이어야 하고, 그 잇기가 이 라운드에서
+            # 여덟 번 터졌다 — 같은 판독에서 나오면 이을 것이 없다.
+            if record.get("isApiErrorMessage"):
+                continue          # API 오류 문구는 조수의 말이 아니다
+            content = message.get("content")
+            if isinstance(content, list):
+                parts = [b["text"] for b in content
+                         if isinstance(b, dict) and b.get("type") == "text"
+                         and isinstance(b.get("text"), str)]
+                text = "\n".join(parts).strip()
+            elif isinstance(content, str):
+                text = content.strip()
+            else:
+                text = ""
+            if text:
+                rows.append({"ts": record.get("timestamp"),
+                             "record": record.get("uuid"), "text": text,
+                             "role": "assistant"})
     return rows, malformed
 
 
@@ -273,9 +343,9 @@ def _codex_rows(handle) -> list[dict]:
         if record.get("type") != "event_msg":
             continue
         payload = record.get("payload") or {}
-        # 압축 요약은 발화가 아니다. `_codex_dialogue` 는 처음부터 이 필드를
-        # 레코드·payload 양쪽에서 봤는데 대장 쪽만 안 봤다 — Claude 쪽에서 방금
-        # 고친 것이 정확히 그 비대칭이라 같은 자리를 여기도 막는다.
+        # 압축 요약은 발화가 아니다. 앞 판은 Codex의 대장과 꼬리가 이 필드를 서로
+        # 다르게 봤다. 지금은 `read_session` 한 판독이 둘을 함께 만들므로 레코드와
+        # payload 양쪽 표시를 여기서 한 번 걸러 같은 입력을 보게 한다.
         if record.get("isCompactSummary") or payload.get("isCompactSummary"):
             continue
         if payload.get("type") != "user_message":
@@ -535,7 +605,12 @@ def compact_chain(path: Path, fmt: str = "claude") -> tuple[list[Path], list[dic
 def extract_utterances(path: Path, since=None, fmt: str = "claude") -> list[dict]:
     """`U0001…` 을 붙인 사용자 발화 대장. 시간순, 판단 없음.
 
-    반환 항목: `{"uid", "kind", "ts", "text"}` — `kind` 는 `user` 또는 `system`.
+    **행의 필드를 여기서 세지 않는다.** 값이 늘 때마다 이 문장이 낡아 이 라운드에서만
+    네 번 고쳤고, 그중 한 번은 판독이 새 필드를 흘리는 것을 아무 시험도 못 잡았다.
+    필드는 코드가 정본이고, 이 문서는 **무엇을 뜻하는지**만 적는다.
+
+    `kind` 는 `user`(사람이 친 것) · `system`(하네스 래퍼) · `peer`(다른 세션이 보낸 것)
+    셋이고, `record` 는 호스트가 레코드에 단 아이디다(대화 꼬리와 잇는 값).
 
     `fmt` 는 **어댑터가 명시한다**(`claude`|`codex`) — 코어가 내용으로 「어느 호스트 것인가」를
     추측하지 않는다. 벤더 사정은 어댑터가 알고, 코어에는 번역된 값만 온다.
@@ -551,18 +626,20 @@ def extract_utterances(path: Path, since=None, fmt: str = "claude") -> list[dict
     return extract_utterances_from([path], since, fmt=fmt)
 
 
-def read_manifest(paths, since=None, fmt: str = "claude") -> dict:
-    """체인을 **한 번 읽어** 대장과 손상 줄 수와 못 읽은 파일을 함께 낸다.
+def read_session(paths, since=None, fmt: str = "claude", tail_limit: int = 30) -> dict:
+    """체인을 **한 번 읽어** 대장·대화 꼬리·손상 줄·못 읽은 파일을 함께 낸다.
 
-    반환 `{"rows", "malformed", "unreadable"}`.
+    반환 `{"rows", "tail", "malformed", "unreadable"}`.
 
-    **읽기 실패를 한 자리에서 처리하는 것이 목적이다.** 소비자마다 따로 읽으면
-    어디서는 예외를 올리고 어디서는 0으로 세고 어디서는 조용히 건너뛰게 되는데,
-    실제로 그 비대칭이 저장을 죽이고(대장) 게이트를 무력화하고(손상 줄) 결손을
-    감췄다(대화 꼬리). 여기서는 **못 읽은 파일이 이름으로 남는다.**
+    **꼬리 행은 대장 행과 같은 객체다.** 사람 발화면 `uid` 를 그대로 갖고 있으므로
+    「대장의 어느 발화가 꼬리에 있나」를 **이을 필요가 없다.** 앞 판은 둘을 따로 읽어
+    사후에 이었고, 그 잇기 단계가 이 라운드에서 여덟 번 터졌다 — 텍스트로 맞추다 짧은
+    발화가 접두로 오탐되고(409건 소실), 구간으로 잘라 창 밖 발화가 사라지고(1건), 그
+    수리가 문면·계약·시험을 차례로 어긋내며 회로가 돌았다. **이을 것이 없으면 그 자리가
+    없다.**
 
-    손상 줄을 같은 읽기에서 세는 이유도 같다 — 따로 읽으면 대장이 본 범위와
-    다른 범위를 셀 수 있고, 260MB 체인을 한 번 더 훑는 비용도 든다.
+    읽기 실패를 한 자리에서 처리하는 것도 그대로다 — 소비자마다 따로 읽으면 어디서는
+    예외를 올리고 어디서는 0으로 세고 어디서는 조용히 건너뛴다.
     """
     reader = _READERS.get(fmt)
     if reader is None:
@@ -585,65 +662,77 @@ def read_manifest(paths, since=None, fmt: str = "claude") -> dict:
             text = (raw.get("text") or "").strip()
             if not text:
                 continue
-            fresh.append({"ts": raw.get("ts"), "uid": raw.get("uid"), "text": text})
-        # **레코드 아이디로 가른다.** 압축이 옮겨 적는 것은 같은 레코드라 uuid 가 같고,
-        # 서로 다른 발화는 본문과 시각이 같아도 uuid 가 다르다. 앞 판은 `(ts, text)` 만
-        # 봤는데 그 근거가 「밀리초까지 같다」였고, **시각이 없는 레코드에서는 그 근거가
-        # 통째로 사라져** 본문만 같은 다른 발화가 접혔다(외부 리뷰 실행 재현).
-        collected.extend(row for row in fresh
-                         if _carry_key(row) not in carried)
+            fresh.append({"ts": raw.get("ts"), "text": text,
+                          "kind": raw.get("kind"), "record": raw.get("record"),
+                          "role": raw.get("role") or "user"})
+        # **레코드 아이디로 가른다.** 압축이 옮겨 적는 것은 같은 레코드라 아이디가 같고,
+        # 서로 다른 발화는 본문과 시각이 같아도 다르다.
+        collected.extend(row for row in fresh if _carry_key(row) not in carried)
         carried.update(k for k in map(_carry_key, fresh) if k is not None)
-    return {"rows": _number_utterances(collected, since),
+
+    # 시각 순서로 한 번만 정렬한다 — 대장 번호와 꼬리 순서가 같은 기준을 쓴다.
+    collected.sort(key=lambda r: parse_ts(r["ts"]) or _EPOCH)
+    for row in collected:
+        if row["role"] == "user" and not row.get("kind"):
+            # 하네스 래퍼도 `role: user` 로 오지만 사람이 친 발화가 아니다. 대장에는
+            # 남기되 `system` 으로 분류해야 그 UID 가 권위를 얻지 못한다. 수집한 쪽이
+            # 신분을 정했으면(`peer`) 그것을 쓴다.
+            row["kind"] = "system" if _is_harness_noise(row["text"]) else "user"
+
+    # **U-ID 는 필터 전에 세션 전체 기준으로 매긴다** — 저장본이 여럿일 때 같은 발화가
+    # 항상 같은 번호를 갖는다. 조수 행은 대장에 안 들어가므로 번호가 없다.
+    numbered = 0
+    ledger: list[dict] = []
+    for row in collected:
+        if row["role"] != "user":
+            continue
+        numbered += 1
+        row["uid"] = f"U{numbered:04d}"
+        ledger.append(row)
+
+    # 꼬리는 **노이즈를 뺀** 대화의 마지막 `tail_limit` 건이다. 같은 목록에서 고르므로
+    # 여기 든 사람 발화는 위에서 받은 `uid` 를 그대로 갖는다.
+    tail = [r for r in collected if r.get("kind") != "system"][-tail_limit:]
+
+    if since is not None:
+        boundary = since
+        ledger = [r for r in ledger if (parse_ts(r["ts"]) or _EPOCH) > boundary]
+    return {"rows": ledger, "tail": tail,
             "malformed": malformed, "unreadable": unreadable}
+
+
+def read_manifest(paths, since=None, fmt: str = "claude") -> dict:
+    """대장만 필요한 호출자를 위한 껍질. 정본은 `read_session` 이다."""
+    out = read_session(paths, since, fmt=fmt)
+    return {"rows": out["rows"], "malformed": out["malformed"],
+            "unreadable": out["unreadable"]}
 
 
 def _carry_key(row: dict):
     """파일 경계를 넘는 **같은 레코드**를 가리키는 키. 못 가르면 `None`(= 접지 않는다).
 
-    압축은 직전 메시지를 새 전사에 옮겨 적는데 그것은 같은 레코드라 uuid 가 같다.
-    uuid 가 없는 형식은 시각+본문으로 물러서지만, **시각이 없으면 접을 근거가 없다** —
+    압축은 직전 메시지를 새 전사에 옮겨 적는데 그것은 같은 레코드라 아이디가 같다.
+    아이디가 없는 형식은 시각+본문으로 물러서지만, **시각이 없으면 접을 근거가 없다** —
     본문만 같은 서로 다른 발화를 지우게 된다.
 
     `None` 은 `carried` 에 넣지 않으므로 `not in carried` 가 항상 참이 되어 접히지 않는다.
 
+    **`uid` 와 `record` 는 다른 것이다.** `uid` 는 번호 매기기가 붙이는 `U0001` 이고
+    `record` 는 호스트가 레코드에 단 아이디다. 한 이름이 단계마다 다른 뜻을 가지면
+    어느 단계의 값인지가 호출 순서에 숨는다 — 이름 하나에 뜻 하나를 준다.
+
     **키는 해시 가능해야 한다** — 이 값들은 호스트 JSONL 에서 그대로 온다. 스키마가
     공개·안정된 것이 아니라 형태는 **가정이지 계약이 아니고**(모듈 머리 주석), 실제로
-    `uuid` 가 객체로 오면 집합에 넣는 순간 `TypeError` 로 명령 전체가 죽는다(외부 리뷰
+    아이디가 객체로 오면 집합에 넣는 순간 `TypeError` 로 명령 전체가 죽는다(외부 리뷰
     실행 확인). 이 파일이 `content`·`prompt` 에 이미 하는 타입 검사를 여기도 한다.
     """
-    uid = row.get("uid")
-    if isinstance(uid, str) and uid:
-        return ("uuid", uid)
+    rec = row.get("record")
+    if isinstance(rec, str) and rec:
+        return ("record", rec)
     ts = row.get("ts")
     if isinstance(ts, str) and ts:
         return ("ts", ts, row["text"])
     return None
-
-
-def _number_utterances(collected: list[dict], since) -> list[dict]:
-    """수집한 발화에 `U0001…` 을 붙인다. 정렬·번호·필터가 여기 한 곳에 있다."""
-    # **시각으로 정렬한 뒤에 U-ID 를 매긴다.** 큐 발화(`queued_command`)는 전달 시점이
-    # 아니라 **입력 시점**의 타임스탬프를 달고 있어 파일 순서와 시간 순서가 어긋난다.
-    # 파일 순서로 번호를 매기면 대장이 시간순이 아니게 되고 `since` 필터도 어긋난다.
-    # 안정 정렬이라 같은 시각은 파일 순서를 유지한다.
-    collected = sorted(collected, key=lambda r: parse_ts(r["ts"]) or _EPOCH)
-    # 채널 간 dedup 은 **하지 않는다.** 두 채널은 서로 다른 레코드라 겹치지 않고(실측:
-    # 큐 6건 중 `role=user` 에도 있는 것 0건), 텍스트로 지우면 **진짜로 두 번 말한
-    # 것까지 지운다.**
-    rows: list[dict] = []
-    for raw in collected:
-        text = raw["text"]
-        rows.append({
-            "uid": f"U{len(rows) + 1:04d}",
-            # 하네스 명령 래퍼도 `role=user` 로 오지만 사람이 친 발화가 아니다. 대장에는
-            # 남기되 `system` 으로 분류해야, 그 UID 가 상시 규율의 폐기 권한을 얻지 못한다.
-            "kind": "system" if _is_harness_noise(text) else "user",
-            "ts": raw["ts"],
-            "text": text,
-        })
-    if since is None:
-        return rows
-    return [r for r in rows if (parse_ts(r["ts"]) or _EPOCH) > since]
 
 
 def extract_utterances_from(paths, since=None, fmt: str = "claude") -> list[dict]:
@@ -668,8 +757,9 @@ def extract_utterances_from(paths, since=None, fmt: str = "claude") -> list[dict
 def human_utterance_uids(rows: list[dict]) -> set[str]:
     """대장 정본에서 **사람이 친 발화** UID만 낸다.
 
-    하네스 래퍼도 대장에는 보존하지만 `system`이다. 결정 인용·상시 규율의 걸기와
-    풀기는 모두 이 집합만 권위로 쓴다. 소비 지점마다 `kind` 조건을 덧대면 같은
+    사람이 아닌 것도 대장에는 보존하되 다른 `kind` 를 단다 — 하네스 래퍼는 `system`,
+    다른 세션이 보낸 발화는 `peer`. 결정 인용·상시 규율의 걸기와 풀기는 모두 이 집합만
+    권위로 쓴다. 소비 지점마다 `kind` 조건을 덧대면 같은
     권한 회로가 다시 커지므로, 사람이 누구인지는 여기서 한 번만 정한다.
     """
     return {str(row.get("uid")) for row in rows
@@ -706,146 +796,22 @@ def _is_harness_noise(text: str) -> bool:
     return stripped.startswith(_SYSTEM_PREFIXES) or stripped.startswith(_HARNESS_WRAPPERS)
 
 
-def _claude_dialogue(handle) -> list[dict]:
-    """Claude JSONL 에서 **대화만** — 사용자 발화 + assistant 텍스트 블록.
-
-    도구 결과(`tool_result`)·도구 호출(`tool_use`)·attachment·sidechain·메타는 뺀다.
-    부피의 주범은 도구 출력이지 대화가 아니다(실측: 꼬리 30건이 도구 포함 3,196 tok,
-    대화만 3,156 tok — 대화 자체는 가볍다).
-    """
-    rows: list[dict] = []
-    for line in handle:
-        if not line.strip():
-            continue
-        try:
-            record = json.loads(line)
-        except json.JSONDecodeError:
-            continue
-        if record.get("isMeta") or record.get("isSidechain"):
-            continue
-        if record.get("isCompactSummary"):
-            # 자동압축 요약은 하네스 산출물이지 이 세션의 대화가 아니다.
-            continue
-
-        # **큐 채널도 대화다.** `queued_command` 는 `message.role` 이 없어 아래 분기에서
-        # 통째로 빠졌다 — 대장에는 있는데 꼬리에는 없어서, 마지막 방향 전환이 큐 입력이면
-        # 「직전 대화의 육성」에서 정확히 그것만 사라졌다(외부 리뷰 지적, 실측 7건).
-        attachment = record.get("attachment") or {}
-        if attachment.get("type") == "queued_command":
-            origin = attachment.get("origin") or {}
-            prompt = attachment.get("prompt")
-            if (origin.get("kind") == "human"
-                    and attachment.get("commandMode") == "prompt"
-                    and isinstance(prompt, str) and prompt.strip()
-                    and not _is_harness_noise(prompt)):
-                rows.append({"role": "user",
-                             "ts": record.get("timestamp") or attachment.get("timestamp"),
-                             "text": prompt.strip()})
-            continue
-
-        message = record.get("message") or {}
-        role = message.get("role")
-        if role == "user":
-            text = _user_text(message.get("content"))
-            if text and not _is_harness_noise(text):
-                rows.append({"role": "user", "ts": record.get("timestamp"), "text": text})
-        elif role == "assistant":
-            if record.get("isApiErrorMessage"):
-                # API 오류 문구는 조수의 말이 아니다 — 꼬리 30칸을 먹으면 실제 대화가 밀린다.
-                continue
-            content = message.get("content")
-            if isinstance(content, list):
-                parts = [b["text"] for b in content
-                         if isinstance(b, dict) and b.get("type") == "text"
-                         and isinstance(b.get("text"), str)]
-                text = "\n".join(parts).strip()
-            elif isinstance(content, str):
-                text = content.strip()
-            else:
-                text = ""
-            if text:
-                rows.append({"role": "assistant", "ts": record.get("timestamp"),
-                             "text": text})
-    return rows
-
-
-def _codex_dialogue(handle) -> list[dict]:
-    """Codex rollout 에서 대화만 — `event_msg` 의 `user_message`/`agent_message`."""
-    rows: list[dict] = []
-    for line in handle:
-        if not line.strip():
-            continue
-        try:
-            record = json.loads(line)
-        except json.JSONDecodeError:
-            continue
-        if (record.get("isMeta") or record.get("isSidechain")
-                or record.get("isCompactSummary") or record.get("isApiErrorMessage")):
-            continue
-        if record.get("type") != "event_msg":
-            continue
-        payload = record.get("payload") or {}
-        if (payload.get("isMeta") or payload.get("isSidechain")
-                or payload.get("isCompactSummary") or payload.get("isApiErrorMessage")):
-            continue
-        kind = payload.get("type")
-        if kind not in ("user_message", "agent_message"):
-            continue
-        text = payload.get("message")
-        if isinstance(text, str) and text.strip() and not _is_harness_noise(text):
-            rows.append({"role": "user" if kind == "user_message" else "assistant",
-                         "ts": record.get("timestamp"), "text": text.strip()})
-    return rows
-
-
-_DIALOGUE_READERS = {"claude": _claude_dialogue, "codex": _codex_dialogue}
-
-
 def read_dialogue_tail(paths, fmt: str = "claude", limit: int = 30) -> dict:
-    """체인의 대화 꼬리와 **못 읽은 파일**을 함께 낸다. `{"rows", "unreadable"}`.
-
-    대장(`read_manifest`)과 같은 규율이다 — 못 읽었으면 그 사실이 이름으로 남는다.
-    조용히 건너뛰면 압축 직후 저장에서 `Recent Dialogue` 가 짧아진 이유를 아무도
-    모른다.
-    """
-    reader = _DIALOGUE_READERS.get(fmt)
-    if reader is None:
-        return {"rows": [], "unreadable": []}
-    collected: list[dict] = []
-    carried = set()
-    unreadable: list[str] = []
-    for path in paths:
-        try:
-            with Path(path).open(encoding="utf-8") as handle:
-                rows = reader(handle)
-        except (OSError, UnicodeError):
-            unreadable.append(Path(path).name)
-            continue
-        collected.extend(r for r in rows
-                         if (r["ts"], r["role"], r["text"]) not in carried)
-        carried.update((r["ts"], r["role"], r["text"]) for r in rows)
-    collected.sort(key=lambda r: parse_ts(r["ts"]) or _EPOCH)
-    return {"rows": collected[-limit:], "unreadable": unreadable}
+    """대화 꼬리만 필요한 호출자를 위한 껍질. 정본은 `read_session` 이다."""
+    out = read_session(paths, fmt=fmt, tail_limit=limit)
+    return {"rows": out["tail"], "unreadable": out["unreadable"]}
 
 
 def extract_dialogue_tail(path: Path, fmt: str = "claude", limit: int = 30) -> list[dict]:
-    """대화 꼬리 `limit` 건 — `Recent Dialogue` 절의 원료.
+    """전사 하나의 대화 꼬리 — `Recent Dialogue` 절의 원료. `read_session` 껍질이다.
 
     자동압축 분석(2026-08-18)에서 가져온 부품이다: 압축이 97% 를 버리고도 맥락이 이어지는
-    이유는 요약 옆에 **최근 대화 원문**이 붙어 있어서였다. 단, 압축과 달리 여기서는
-    도구 결과를 빼고 **대화만** 남긴다 — 방향은 대화의 육성으로 전달되고, 상태는
-    `Git State`·`Files Touched` 가 따로 든다.
+    이유는 요약 옆에 **최근 대화 원문**이 붙어 있어서였다. 30 이라는 기본값은 압축의
+    검증된 보존 규모(실측 30~45건)에서 왔다 — 1~2건 안은 사용자가 기각했다("방향까지
+    전달하려면 15건 이상").
 
-    30 이라는 기본값은 압축의 검증된 보존 규모(실측 30~45건)에서 왔다. 1~2건 안은
-    사용자가 기각했다 — "방향까지 전달하려면 15건 이상".
+    **판독기를 따로 두지 않는다.** 대장과 꼬리를 다른 판독기로 읽으면 필터가 갈리고,
+    실제로 갈렸다 — 새 경로는 다른 세션 발화를 꼬리에 담는데 옛 경로는 `isMeta` 에서
+    걸렀다. 이 라운드의 결함 여덟 건이 전부 「같은 것을 두 곳에서 읽는다」에서 나왔다.
     """
-    reader = _DIALOGUE_READERS.get(fmt)
-    if reader is None:
-        return []
-    try:
-        with path.open(encoding="utf-8") as handle:
-            rows = reader(handle)
-    except OSError:
-        return []
-    rows.sort(key=lambda r: parse_ts(r["ts"]) or _EPOCH)
-    return rows[-limit:]
+    return read_session([path], fmt=fmt, tail_limit=limit)["tail"]

@@ -159,14 +159,30 @@ def render_ledger(rows: list, lang: str = "ko") -> str:
     """
     if not rows:
         return messages.msg("ledger_empty", lang)
-    out = ["| UID | 지문 | 담긴 곳 | 무엇이 남았나 |", "|---|---|---|---|"]
+    out = ["| UID | 누구 | 지문 | 담긴 곳 | 무엇이 남았나 |", "|---|---|---|---|---|"]
     for row in rows:
         uid = str(row.get("uid", "")).strip()
         excerpt = " ".join(str(row.get("excerpt", "")).split()).replace("|", "\\|")
         section = str(row.get("section", "")).strip()
         note = " ".join(str(row.get("note", "")).split()).replace("|", "\\|")
-        out.append(f"| {uid} | {excerpt} | {section} | {note or '—'} |")
+        out.append(f"| {uid} | {_who(row.get('kind'))} | {excerpt} | {section} "
+                   f"| {note or '—'} |")
     return "\n".join(out)
+
+
+#: 사람이 친 발화는 **빈칸**이다. 대부분이 사람 발화라 라벨을 채우면 표가 그 글자로
+#: 덮이고 정작 다른 것이 안 보인다 — 빈칸이 기본값이고 예외만 이름을 갖는다.
+_LEDGER_WHO = {"peer": "다른 세션", "system": "하네스"}
+
+
+def _who(kind) -> str:
+    """대장 표에 신분을 싣는다. **지문으로 신분을 읽게 두지 않는다.**
+
+    저장본 문면에 신분 열이 없어서, 다른 세션이 보낸 발화는 지문 접두(`[이름] `)로만
+    구별됐다. 그것은 본문에 기댄 구별이라 지문을 읽기 좋게 다듬는 순간 사라진다 —
+    같은 이유로 대장 산출에서는 `kind` 를 따로 낸다. 하네스 래퍼도 같은 처지였다.
+    """
+    return _LEDGER_WHO.get(kind or "user", "")
 
 
 #: frontmatter·마크다운 구조를 만드는 문자들. 어댑터 값에 들어오면 제거한다.
@@ -256,22 +272,33 @@ def render_dialogue(rows: list, lang: str = "ko") -> str:
     return "\n".join(out).rstrip()
 
 
-def _tail_uid_range(ledger: list, dialogue: list) -> tuple[str, str] | None:
-    """대화 꼬리가 덮는 발화 UID 구간 `(첫, 끝)`. 겹치는 게 없으면 None.
+def recap_partition(ledger: list, dialogue: list) -> tuple[list[str], list[str]]:
+    """대장 UID를 ``(요약 대상, 꼬리 수록)`` 두 목록으로 정확히 가른다.
 
-    꼬리는 사용자·assistant 를 섞어 담고 대장은 사용자 발화만 담으므로, **텍스트가 같은
-    것끼리 맞춰야** 구간이 나온다. UID 를 못 맞추면 조용히 넘어가지 않고 None 을 돌려
-    「전 구간을 요약하라」로 떨어진다 — 잘못된 구간을 빼라고 하면 그 구간이 통째로 사라진다.
+    **잇지 않는다.** 꼬리 행은 대장 행과 같은 객체라 사람 발화면 `uid` 를 그대로 갖는다
+    (`transcript.read_session`). 앞 판들은 둘을 따로 읽어 사후에 이었고, 그 잇기가 이
+    라운드에서 여덟 번 터졌다 — 텍스트로 맞추다 짧은 발화가 접두로 오탐돼 409건이
+    사라졌고, 구간으로 잘라 창 밖 발화가 또 사라졌고, 그 수리가 문면·계약·시험을 차례로
+    어긋냈다. 이을 것이 없으면 그 자리가 없다.
+
+    앞 판은 여기서 요약 목록만 내고 저장 문면에는 개수만 남겼다. 같은 개수의 다른 UID
+    집합을 구별할 수 없었으므로, 이제 꼬리에 실린 **대장 UID 목록**도 함께 낸다. 이 목록은
+    대장과의 교집합만이므로 `since` 앞의 꼬리 행이 섞여도 저장 대장 밖 UID는 기록하지 않는다.
+
+    꼬리에 대장 `uid` 가 하나도 없으면 전 대장이 요약 몫이다 — 틀린 대상을 빼면 통째로
+    사라지므로, 모르면 아무것도 빼지 않는다.
     """
-    tail_texts = {" ".join(str(r.get("text", "")).split())
-                  for r in dialogue if r.get("role") == "user"}
-    if not tail_texts:
-        return None
-    hits = [row["uid"] for row in ledger
-            if " ".join(str(row.get("excerpt", "")).split()) and any(
-                t.startswith(" ".join(str(row["excerpt"]).split()).rstrip("…"))
-                for t in tail_texts)]
-    return (hits[0], hits[-1]) if hits else None
+    ledger_uids = [str(row.get("uid")) for row in ledger if row.get("uid")]
+    dialogue_uids = {str(row.get("uid")) for row in dialogue if row.get("uid")}
+    carried_uids = [uid for uid in ledger_uids if uid in dialogue_uids]
+    carried = set(carried_uids)
+    recap_uids = [uid for uid in ledger_uids if uid not in carried]
+    return recap_uids, carried_uids
+
+
+def recap_span(ledger: list, dialogue: list) -> list[str]:
+    """요약이 덮어야 할 UID 목록. exact partition 정본의 호환 표면이다."""
+    return recap_partition(ledger, dialogue)[0]
 
 
 def assemble_body(meta: dict, sections: dict, files_touched: list, created_human: str,
@@ -316,16 +343,32 @@ def assemble_body(meta: dict, sections: dict, files_touched: list, created_human
     ledger_block = render_ledger(ledger or [], lang)
     dialogue_block = render_dialogue(dialogue or [], lang)
 
-    # **요약이 덮을 구간을 CLI 가 계산해 못박는다.** 「고르게 쓰라」는 훈계로는 최신성
+    # **요약이 덮을 집합을 CLI 가 계산해 못박는다.** 「고르게 쓰라」는 훈계로는 최신성
     # 편향을 못 막는다(외부 리뷰 지적, 2026-08-18): 꼬리가 이미 원문으로 있는데 요약까지
     # 후반으로 기울면 같은 구간이 **이중 가중**되고 전반은 두 번 밀린다. 그래서 꼬리가
-    # 실제로 덮는 UID 구간을 여기서 재고, 그 구간을 요약에서 **빼라고** 지시한다.
-    tail_uids = _tail_uid_range(ledger or [], dialogue or [])
-    if tail_uids:
-        recap_scope_line = messages.msg("recap_scope_bounded", lang,
-                                        first=tail_uids[0], last=tail_uids[1])
-    else:
+    # 실제로 덮는 UID를 여기서 재고, 그 집합을 요약에서 **빼라고** 지시한다.
+    # partition은 **두 목록**이다. 꼬리 목록이 비면 전 대장, 요약 목록이 비면 없음,
+    # 둘 다 있으면 일부다 — 세 문면은 목록의 성질에서 나오며 새 정책 조건이 없다.
+    #
+    # **저장본은 개수만 남기지 않는다.** 꼬리에 실린 대장 UID는 대화 행 최대 30개보다
+    # 많을 수 없으므로 그 작은 목록을 그대로 기록한다. 저장본 대장과의 차집합으로 exact
+    # 요약 대상을 재구성하며, 불연속 꼬리를 구간으로 다시 해석하지 않는다.
+    span, carried_uids = recap_partition(ledger or [], dialogue or [])
+    carried = len(carried_uids)
+    # 분모도 partition과 같은 UID 보유 행을 센다. 원시 ledger 행 수를 쓰면 UID 없는
+    # 행이 섞였을 때 문면의 total != covers + carried가 되어 exact 설명이 깨진다.
+    total = len(span) + carried
+    carried_line = messages.msg(
+        "recap_carried_uids", lang,
+        uids=json.dumps(carried_uids, ensure_ascii=False))
+    # 덮인 것이 하나도 없으면 못 이은 것이다(대장이 비어도 여기) — 그때는 전 구간이 맞다.
+    if not carried_uids:
         recap_scope_line = messages.msg("recap_scope_full", lang)
+    elif not span:
+        recap_scope_line = messages.msg("recap_scope_empty", lang)
+    else:
+        recap_scope_line = messages.msg("recap_scope_bounded", lang,
+                                        total=total, carried=carried, covers=len(span))
 
     front = (
         "---\n"
@@ -419,6 +462,7 @@ def assemble_body(meta: dict, sections: dict, files_touched: list, created_human
         "## Session Recap\n\n"
         f"{messages.msg('recap_goal_line', lang, summary=summary)}\n\n"
         f"{messages.msg('session_recap_note', lang)}\n"
+        f"{carried_line}\n"
         f"{recap_scope_line}\n"
         f"{_section(sections.get('session_recap'), messages.msg('session_recap_default', lang))}\n\n"
         "## Standing Directives\n\n"

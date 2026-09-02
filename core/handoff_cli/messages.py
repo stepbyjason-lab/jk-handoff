@@ -165,14 +165,28 @@ _MESSAGES: dict[str, dict[str, str]] = {
             "응답 쪽은 이 절이 채운다 — 사용자 말만 요약하면 답변이 상실된다. 덮을 범위는 "
             "아래 줄이 정한다(CLI 가 계산한다)."
         ),
+        "recap_carried_uids": (
+            "> **꼬리에 실린 대장 UID(JSON): {uids}.** 저장본의 대장 UID에서 이 목록을 "
+            "빼면 요약 대상 UID 집합을 정확히 재구성할 수 있다."
+        ),
+        # **구간이 아니라 나머지다.** 꼬리가 덮는 발화가 연속이라는 보장이 없어
+        # 「처음 ~ N 직전」으로 적으면 창 밖으로 밀린 발화를 쓰지 말라고 읽힌다.
         "recap_scope_bounded": (
-            "> **덮을 구간(CLI 계수): 대장의 처음 ~ {first} 직전.** {first}~{last} 는 아래 "
-            "Recent Dialogue 에 **원문으로 이미 있다 — 요약에서 다시 쓰지 마라.** 같은 구간을 "
-            "두 번 실으면 후반이 이중 가중되고 전반이 두 번 밀린다. 꼬리는 「원문 참조」 한 "
-            "줄로 넘기고, 지면은 전반·중반에 쓴다."
+            "> **덮을 구간(CLI 계수): 대장 {total}건 중 꼬리에 이미 원문으로 있는 {carried}건을 "
+            "뺀 나머지 {covers}건.** 그 {carried}건은 아래 Recent Dialogue 에 있다 — "
+            "**요약에서 다시 쓰지 마라.** 같은 구간을 두 번 실으면 후반이 이중 가중되고 "
+            "전반이 두 번 밀린다. 꼬리는 「원문 참조」 한 줄로 넘기고, 지면은 나머지에 쓴다."
         ),
         "recap_scope_full": (
             "> **덮을 구간: 대장 전체.** 대화 꼬리와 겹치는 구간을 못 찾았으므로 전 구간을 요약한다."
+        ),
+        # 대장 전체가 꼬리 안에 들면 요약이 덮을 구간이 **없다**. 그때도 「전반·중반에
+        # 쓴다」를 그대로 두면 없는 전반을 지어내게 된다 — 이 프로젝트가 「빈칸
+        # boilerplate 채우기 금지」를 규율로 둘 만큼 겪은 실패다. 짧은 세션·델타에서 흔하다.
+        "recap_scope_empty": (
+            "> **덮을 구간 없음.** 대장이 통째로 아래 Recent Dialogue 안에 있다 — "
+            "**요약을 쓰지 마라.** 원문이 이미 전부 실려 있으므로 여기 무엇을 쓰든 이중 "
+            "가중이고, 없는 전반을 지어내는 자리가 된다."
         ),
         "session_recap_default": "(세션 요약 미작성)",
         "standing_note": (
@@ -513,12 +527,22 @@ _MESSAGES: dict[str, dict[str, str]] = {
             "summarizing only the user's words loses the answers. The line below sets the "
             "range to cover (the CLI computes it)."
         ),
+        "recap_carried_uids": (
+            "> **Ledger UIDs carried by the dialogue tail (JSON): {uids}.** Subtract this "
+            "list from the saved ledger UIDs to reconstruct the exact recap UID set."
+        ),
         "recap_scope_bounded": (
-            "> **Range to cover (counted by the CLI): start of the ledger up to just "
-            "before {first}.** {first}-{last} already appear **verbatim** under Recent "
-            "Dialogue — **do not restate them here.** Carrying the same span twice "
-            "double-weights the late session and pushes the early session out twice. "
-            "Refer to the tail in one line and spend the space on the early and middle."
+            "> **Range to cover (counted by the CLI): of {total} ledger entries, the "
+            "{covers} that remain after removing the {carried} already carried verbatim "
+            "by the dialogue tail.** Those {carried} appear under Recent Dialogue — "
+            "**do not restate them here.** Carrying the same span twice double-weights "
+            "the late session and pushes the early session out twice. Refer to the tail "
+            "in one line and spend the space on the rest."
+        ),
+        "recap_scope_empty": (
+            "> **Nothing to cover.** The whole ledger already sits inside Recent Dialogue "
+            "below — **do not write a recap.** Everything is there verbatim, so anything "
+            "written here is double-weighted and invents an early session that is not there."
         ),
         "recap_scope_full": (
             "> **Range to cover: the whole ledger.** No overlap with the dialogue tail was "
