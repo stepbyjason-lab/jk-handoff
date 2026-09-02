@@ -598,7 +598,7 @@ _RELATION_RE = re.compile(
 
 
 def parse_decisions(section_text: str) -> list[dict]:
-    """`## Decisions` / `## Unapproved Proposals` 에서 **ID 가 붙은 항목만** 뽑는다.
+    """`## Decisions` / `## Unapproved Proposals` 의 **머리줄 레코드만** 뽑는다.
 
     반환: `{"id", "text", "owner", "relations": [{"token", "target"}]}`.
 
@@ -609,17 +609,17 @@ def parse_decisions(section_text: str) -> list[dict]:
     보지 않는다.
     """
     items: list[dict] = []
-    current: dict | None = None
     for raw in section_text.splitlines():
-        match = _DECISION_ID_RE.match(raw)
-        if match:
-            if current is not None:
-                items.append(current)
-            rest = raw[match.end():].strip(" *:—-")
-            current = {"id": match.group(1), "text": rest, "owner": "",
-                       "relations": []}
-        if current is None:
+        head = _DECISION_ID_RE.match(raw)
+        if not head:
             continue
+
+        rest = raw[head.end():].strip(" *:—-")
+        item = {"id": head.group(1), "text": rest, "owner": "", "relations": []}
+
+        # 전에는 ID 뒤의 모든 줄을 같은 항목의 구조로 재해석했다. 그래서 CLI 가 넣은
+        # 인용 원문과 어댑터 해석 산문 속 관계 토큰까지 관계·주체가 됐다. 이제 관계와
+        # 주체는 render_decisions 계약대로 **머리줄에서만** 읽고, 그 아래 줄은 본문으로 둔다.
         for match in _RELATION_RE.finditer(raw):
             token, target = match.group(1), match.group(2)
             # `RELATES` 는 **산문 이유가 본체**다 — 그게 3회 쌓여 토큰 승격 후보가 된다.
@@ -630,13 +630,12 @@ def parse_decisions(section_text: str) -> list[dict]:
                 cut = min((tail.index(c) for c in ")]" if c in tail), default=len(tail))
                 note = tail[:cut].strip(" ,—-:")
             rel = {"token": token, "target": target, "note": note}
-            if rel not in current["relations"]:
-                current["relations"].append(rel)
-        if "누가:" in raw and not current["owner"]:
+            if rel not in item["relations"]:
+                item["relations"].append(rel)
+        if "누가:" in raw:
             # `chair(미승인)` 의 닫는 괄호를 자르면 안 된다 — 승인 여부가 그 안에 있다.
-            current["owner"] = raw.split("누가:", 1)[1].strip(" *")
-    if current is not None:
-        items.append(current)
+            item["owner"] = raw.split("누가:", 1)[1].strip(" *")
+        items.append(item)
     return items
 
 
