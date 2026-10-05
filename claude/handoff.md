@@ -1,6 +1,6 @@
 ---
 description: 세션 핸드오프 - 프로젝트 안에 상세 정본을 저장하고 글로벌 진행상황 인덱스를 갱신하며, 다음 세션·다른 머신에서 안전하게 이어간다.
-version: 0.5.2
+version: 0.5.3
 model: sonnet
 ---
 
@@ -89,7 +89,10 @@ complete|in-progress|broken|read-only`/`note` 배열) · `lang`(선택, `"ko"`/`
 `transcript_format`(`claude`/`codex`) · `covers_from`(델타 저장의 시작 경계, 없으면 `null`) ·
 **`utterance_ledger`**(처분 배열 — 규율 2항) · **`decisions`**(결정 배열 — 규율 4항. `sections.decisions`·`sections.unapproved` 는 이 배열이 있으면 CLI 가 만든다) · `writer_effort`.
 호스트별 값은 어댑터가 이 중립 이름으로 번역해 넘긴다 — 코어가 호스트 변수 이름을 알면
-벤더가 늘 때마다 코어가 바뀐다.
+벤더가 늘 때마다 코어가 바뀐다. **세션 값만은 예외다(R9-H2)** — 번역을 맡겼더니 다른 축의
+값이 두 번 넘어갔다. Claude Code 저장에서는 CLI 가 `CLAUDE_CODE_SESSION_ID` 를 직접 읽어
+대장과 `writer_session` 에 쓰므로 `session_id` 는 넘기지 않는다. 넘긴 값이 그와 다르면
+CLI 는 넘긴 값을 쓰지 않고 결과 경고에 두 값을 함께 남긴다.
 
 **`writer_model` 은 넘기지 않는다.** CLI 가 트랜스크립트에서 **실측**한다 — 신고값이 실제
 저작 모델과 달랐던 실측 사고가 있다(`claude-opus-5` 로 적혔으나 실제는 `claude-sonnet-5`).
@@ -110,8 +113,8 @@ CLI 결과의 `warnings` 배열을 **빠짐없이 사용자에게 보고**한다
 3. **「발화 대장 획득」을 먼저 실행한다** — 다른 절을 쓰기 전이다(순서가 뒤집히면 기억으로 쓰고
    대장으로 사후 정당화하게 된다).
 4. 대장을 근거로 14절 narrative 와 `status` 를 판단해 JSON 페이로드를 만든다. 대장을 얻었으면
-   `session_id`·`transcript_format`·`covers_from` 을 함께 넣는다(`transcript` 는 명시 경로가
-   있을 때만).
+   `transcript_format`·`covers_from` 을 함께 넣는다(`session_id` 는 넣지 않는다 — CLI 가
+   런타임에서 읽는다. `transcript` 는 명시 경로가 있을 때만).
 5. CLI `save` 를 호출한다. CLI 가 수행: `.project-id` 생성(save 경로에서만)/읽기 · git
    branch·full commit·dirty·시각 실측 · 상세 본문 저장(기존 파일 덮어쓰지 않음, 원자교체) ·
    `LATEST.md`·`INDEX.md` 재생성 · 글로벌 CURRENT.md 를 전 active 토픽 집계로 재생성
@@ -158,18 +161,23 @@ CLI 결과의 `warnings` 배열을 **빠짐없이 사용자에게 보고**한다
 
 ### 발화 대장 획득 (Claude Code)
 
-세션 식별자는 런타임이 준다. 트랜스크립트 경로는 CLI 가 `--cwd` 로 유도하므로 넘기지 않아도 된다.
+세션 식별자는 런타임이 준다 — **CLI 가 `CLAUDE_CODE_SESSION_ID` 를 직접 읽는다**(전사
+파일명과 같은 축). 앱 세션(`CLAUDE_CODE_HOST_SESSION_ID`, `local_…`)과 훅이 찍는 값은 다른
+축이다. 그래서 `--session` 은 넘기지 않는다 — 넘긴 값이 그와 다르면 CLI 는 그 값을 쓰지 않고
+경고에 두 값을 함께 남기며, 그 경고는 그대로 보고한다. 트랜스크립트 경로는 CLI 가 `--cwd` 로
+유도하므로 넘기지 않아도 된다(`--transcript` 로 직접 주면 그 경로가 정본이다).
 
 ```bash
 python -m handoff_cli --cwd "$PWD" utterances \
-  --session "$CLAUDE_CODE_SESSION_ID" \
   --topic "<확정 토픽>" [--delta | --full]
 ```
 
 사용자가 `/handoff save --delta`·`--full` 을 줬으면 **그 플래그를 그대로 붙여 보낸다.**
 안 줬으면 생략한다 — CLI 가 알아서 가른다(규율 7).
 
-`--session` 값이 비어 있으면 이 호출을 생략하고 아래 규율 8 의 폴백으로 간다.
+`CLAUDE_CODE_SESSION_ID` 가 비어 있으면(런타임 미제공) 이 호출을 생략하고 아래 규율 8 의
+폴백으로 간다. 이 호출이 `ok: false` 로 돌아오면 `tried` 에 시도한 경로가 온다 — 그대로
+보고하고 규율 8 로 간다.
 
 ### 내용 보전 규율 (R8 — 두 어댑터 동일 문구)
 
@@ -209,6 +217,11 @@ python -m handoff_cli --cwd "$PWD" utterances \
   대장 표의 「누구」 열에 `다른 세션` 으로, 제 시각 자리에 실린다. **사람이 친 발화가 아니므로
   결정·상시 규율·Exact 의 출처가 될 수 없지만**, 대장에 있으므로 처분은 해야 한다 — 작업
   교환이면 무엇을 주고받았는지, 이 저장본의 작업이 아니면 `없음` + 그 이유.
+- **텍스트 없이 이미지 같은 것만 보낸 입력도 처분 대상이다(R9-H2).** 지문이
+  `[텍스트 없는 입력 — local_image 1건]` 처럼 종류와 개수만 밝힌 자리표시로 실리고, 사람이
+  보냈으면 사람 발화로 센다. **다만 인용할 원문이 없으므로 결정·상시 규율·Exact 의 출처가 될
+  수 없다**(`decision_source_textless`·`standing_source_textless`·`exact_source_textless`) —
+  그 이미지가 무엇을 정했는지는 뒤따른 텍스트 발화를 출처로 대거나, 처분 `note` 에 적는다.
 
 **CLI 가 거부하는 것 넷**: 처분 안 된 UID(`ledger_uid_missing`) · 목적지가 절 이름도 `없음` 도
 아님(`ledger_bad_destination`) · **지목한 절이 실제로 비어 있음**(`ledger_empty_target`) ·
@@ -261,9 +274,16 @@ python -m handoff_cli --cwd "$PWD" utterances \
 **인용문을 옮겨 적지 마라.** CLI 가 대장 원문에서 넣는다. 옮겨 적다 바뀌면 「원문 그대로」가
 깨진 걸 아무도 모른다.
 
-**대장과 서로 가리켜야 한다.** 대장이 `Decisions` 로 처분한 UID 와 결정이 인용한 UID 가
-**집합으로 같아야** 하며, 어긋나면 CLI 가 거부한다(`decision_ledger_mismatch`). 한쪽만 고치는
-것이 불가능하다.
+**대장과 서로 가리켜야 한다.** 대장이 `Decisions` 로 처분한 UID 는 결정이 반드시 인용하고,
+결정이 인용한 UID 는 대장이 **출처 절 셋**(`Decisions`·`Standing Directives`·`Exact Next Step`)
+중 하나로 처분했어야 한다. 어긋나면 CLI 가 거부한다(`decision_ledger_mismatch`). 한쪽만
+고치는 것이 불가능하다.
+
+**한 발화가 여럿을 맡으면 함께 인용한다(R9-H2).** 한 발화가 결정을 정하고 규율을 걸고 다음
+행동을 지목했으면 세 절이 그 UID 를 함께 인용한다 — 대장 행은 목적지를 하나만 가지므로 셋
+중 한 곳으로 처분하면 된다. 처분이 없거나 셋 밖으로 처분된 UID 를 인용하거나, 처분한 그 절이
+인용하지 않으면 여전히 거부된다. `decisions` 를 배열로 넘길 때만 결정이 이 공동 인용에 낀다 —
+산문 결정은 인용을 셀 수 없다.
 
 **관계 토큰은 닫힌 집합이다.** 가르는 축은 「이전 것이 아직 살아 있나」.
 
@@ -331,11 +351,16 @@ python -m handoff_cli --cwd "$PWD" utterances \
 
 세션 식별자가 없거나 트랜스크립트를 못 찾았으면 `session_id`·`transcript`·
 `transcript_format`·`covers_from`·`utterance_ledger` 를 전부 생략하고 저장을 계속하되,
-**「전부 정리했다」고 말하지 않는다.** frontmatter 의 `writer_session: null` 이 보증 없음을
-그대로 드러낸다.
+**「전부 정리했다」고 말하지 않는다.** 저장본의 `## Utterance Ledger` 절이 보증 없음을 그대로
+드러낸다. 재개는 `writer_session` 이 비어 있거나 그 절에 「전사를 찾거나 읽지 못해 전수 처분을
+검증하지 못했다」는 전용 문구가 실린 저장본에 불완전 표식을 단다 — `HANDOFF_SESSION_ID` 가
+`writer_session` 을 채우기만 한 저장은 그 절이 일반 문구라 표식이 붙지 않는다. CLI 가 전사를
+찾다 못 찾았으면 저장 결과 경고에 **시도한 경로**가 실린다 — 그대로 보고한다.
+`writer_session` 이 채워진 것은 대장을 얻었다는 표지가 아니다 — 호스트가 세션 값을 주면
+대장이 없어도 그 값이 적힌다(R9-H2).
 
 **대장을 받았다고 그것이 세션 전체라는 뜻은 아니다(R9).** Claude Code 는 컨텍스트가 차면
-대화를 **새 전사 파일로 잘라 옮긴다** — 그래서 `--session` 이 가리키는 파일 하나만 읽으면
+대화를 **새 전사 파일로 잘라 옮긴다** — 그래서 세션 값이 가리키는 파일 하나만 읽으면
 뒷부분만 덮은 대장이 「세션 전체」로 나간다(실측 277건 중 54건). CLI 가 잘린 파일 머리의
 이음매를 따라 앞부분까지 거슬러 올라가 한 대장으로 잇지만, 앞 전사가 지워졌거나 잠겨
 있으면 못 잇는다. 그때 판정은 출력에 값으로 온다:
@@ -348,6 +373,10 @@ python -m handoff_cli --cwd "$PWD" utterances \
   자동압축이 걸렸다는 뜻이다.
 - `partial` 이면 CLI 가 `warn_compact_chain_*` 경고를 낸다 — 그대로 보고하고, 저장본에
   **덮은 범위를 명시한다.** 앞 전사를 찾을 수 있으면 `--transcript` 로 직접 주고 다시 받는다.
+- **`coverage: "no_input"`** — 전사를 찾았지만 **전사 전체에서 입력을 하나도 읽지 못했다**
+  (R9-H2). 사람이 친 입력과 사람이 치지 않은 입력 모두 없을 때만 CLI 가
+  `warn_no_readable_input` 경고를 내며 저장 결과에도 싣는다. 발주 브리프를 읽었으나 사람
+  발화가 0건인 스레드와 직전 저장 뒤 새 발화가 없는 델타는 여기 해당하지 않는다.
 
 #### 9. 상시 규율(`standing`) — 다음 세션에도 참이어야 하는 규칙만
 
@@ -420,8 +449,9 @@ CLI 가 지시 원문을 절에 병기한다(지시가 원문으로 있어야 �
 지어낸 UID 로 채우지 마라.
 쓰기 대상 경로는 `next_step_targets: ["relative/path"]` 배열로 별도 넘긴다. CLI 는 이를
 `exact_target_paths` frontmatter 구조로 보존할 뿐 Exact 산문을 다시 읽어 파싱하지 않는다.
-**대장 처분과 집합이 같아야 한다**(`next_step_ledger_mismatch`) — 대장을
-`Exact Next Step` 으로 처분했으면 반드시 여기에 그 UID 를 넣고, 그 반대도 같다.
+**대장 처분과 서로 가리켜야 한다**(`next_step_ledger_mismatch`) — 결정과 같은 규칙이다(규율
+4항). 대장을 `Exact Next Step` 으로 처분했으면 반드시 여기에 그 UID 를 넣고, 여기 넣은 UID 는
+대장이 출처 절 셋 중 하나로 처분했어야 한다.
 
 #### 11. `## Incidents` — 사고 대장. 다섯 칸을 채운다. **0건은 의심 신호다**
 

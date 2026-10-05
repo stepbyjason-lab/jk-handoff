@@ -108,7 +108,7 @@ def _project_slug(cwd: str) -> str:
     return re.sub(r"[:\\/_]", "-", str(Path(cwd).resolve()))
 
 
-def derive_transcript_path(session_id: str, cwd: str,
+def derive_transcript_path(session_id: str | None, cwd: str,
                            explicit: str | None = None) -> Path:
     """**호출자가 준 경로가 정본이다.** 유도는 Claude Code 전용 편의일 뿐이다.
 
@@ -123,6 +123,9 @@ def derive_transcript_path(session_id: str, cwd: str,
 
     유도가 실패하면 `TranscriptNotFound` — 조용히 넘어가지 않는다. 빈 대장을 내면
     「전수」 보증이 거짓이 된다.
+
+    세션 값이 없으면 유도하지 않는다 — 없는 값으로 만든 `None.jsonl` 은 시도한 경로가
+    아니라 지어낸 경로다. 어느 세션 값을 쓸지는 호출자가 정해 넘긴다(`cli._session_axis`).
     """
     tried: list[str] = []
     if explicit:
@@ -133,11 +136,12 @@ def derive_transcript_path(session_id: str, cwd: str,
 
     # Claude Code 전용 유도. 호스트 버전이 바뀌어 규칙이 달라지면 여기를 갱신한다
     # (예외 메시지가 시도한 경로를 그대로 보여주므로 무엇이 어긋났는지 바로 보인다).
-    derived = (Path(os.path.expanduser("~")) / ".claude" / "projects"
-               / _project_slug(cwd) / f"{session_id}.jsonl")
-    if derived.is_file():
-        return derived
-    tried.append(str(derived))
+    if session_id:
+        derived = (Path(os.path.expanduser("~")) / ".claude" / "projects"
+                   / _project_slug(cwd) / f"{session_id}.jsonl")
+        if derived.is_file():
+            return derived
+        tried.append(str(derived))
     raise TranscriptNotFound(tried)
 
 
@@ -265,6 +269,24 @@ def _user_text(content) -> str:
     return "\n".join(parts)
 
 
+def _textless_text(content) -> str:
+    """텍스트 없이 이미지 같은 블록만 온 입력의 대장 본문. 그런 블록이 없으면 `""`.
+
+    본문을 비워 두면 `read_session` 이 빈 행으로 버린다. 블록 내용(경로·data URI)은
+    싣지 않는다 — 인용할 원문이 아니므로 종류와 개수만 밝힌다.
+    """
+    if not isinstance(content, list):
+        return ""
+    counts: dict[str, int] = {}
+    for block in content:
+        if isinstance(block, dict) and isinstance(block.get("type"), str) \
+                and block["type"] != "text":
+            counts[block["type"]] = counts.get(block["type"], 0) + 1
+    if not counts:
+        return ""
+    return "[텍스트 없는 입력 — " + ", ".join(f"{k} {v}건" for k, v in counts.items()) + "]"
+
+
 def _claude_models(handle) -> list[str]:
     """assistant 메시지의 `model` 을 파일 순서대로. 저작 모델을 **실측**하기 위한 것."""
     out: list[str] = []
@@ -321,17 +343,35 @@ def measure_writer_model(path: Path, fmt: str = "claude") -> str | None:
 
 
 def _codex_rows(handle) -> list[dict]:
-    """Codex: `event_msg.payload.type == "user_message"` 의 `payload.message` 만.
+    """Codex 사람 발화는 `event_msg` 에 오고, **호스트 판에 따라 자리가 둘**이다.
+
+    ① `payload.type == "user_message"` 의 `payload.message` — 옛 판.
+    ② `payload.type == "item_completed"` 이고 `payload.item.type == "UserMessage"` 인 줄의
+       `item.content` 텍스트 블록 — 새 판(R9-H2 S4). 텍스트 없이 이미지 같은 블록만 오면
+       그 종류를 밝힌 자리표시로 대장에 남긴다. 신분은 다른 입력과 같이 가르고, 인용할
+       원문이 없으므로 `textless` 를 달아 권위·꼬리에서 뺀다.
+
+    ②를 안 읽어 대장이 통째로 비었다. 2026-07~09 이 머신의 Codex 전사 2,670개 중 ①이
+    있는 전사 0 · ②가 있는 전사 2,499 — ①만 읽던 판은 전사를 찾고도 사람 발화 0건을
+    냈고, 그 기간 Codex 저장이 전부 대장 없이 나갔다(기획 4-j).
 
     **`role == "user"` 를 쓰면 안 된다**(2026-08-17 Codex 실물 확인). `response_item` 쪽
-    `role:user` 에는 `<environment_context>`·`AGENTS.md`·훅 프롬프트가 섞여 있다.
+    `role:user` 에는 `<environment_context>`·`AGENTS.md`·훅 프롬프트가 섞여 있다. ①·②에는
+    없다(위 전수에서 머리 표식 0건) — 훅 프롬프트는 ②와 다른 `item.type`(`HookPrompt`)으로 온다.
 
-    **채널을 합치지 않는다.** 같은 발화가 `response_item`(9행)과 `event_msg`(10행) 양쪽에,
-    그리고 `compacted.replacement_history` 에도 재기록된다. 이 한 채널만 읽으면 교차 중복이
-    없고, 텍스트 해시로 dedup 하면 **진짜로 두 번 말한 것까지 지운다.**
+    사람 발화는 다른 채널에서 더하지 않는다. 같은 발화가 `response_item` 과
+    `compacted.replacement_history` 에도 재기록된다. 그쪽을 더하면 교차 중복이 나고, 텍스트
+    해시로 dedup 하면 **진짜로 두 번 말한 것까지 지운다.** ①과 ②는 호스트 판이 고른 자리라
+    둘 다 읽어도 한 발화가 두 번 오지 않는다(위 전수: 둘 다 있는 전사 0). 한 판이 둘을 함께
+    쓰기 시작하면 같은 발화가 대장에 두 번 뜬다 — 조용히 빠지는 쪽보다 보이는 쪽을 골랐다.
+    부속 스레드로 들어오는 `agent_message` 는 별도의 비사람 입력이다. 수신자가 이
+    스레드일 때만 `system` 으로 남겨 S5의 입력 판독에 포함한다.
     """
     rows: list[dict] = []
     malformed = 0
+    originator = None
+    source = None
+    agent_path = None
     for line in handle:
         if not line.strip():
             continue
@@ -339,6 +379,33 @@ def _codex_rows(handle) -> list[dict]:
             record = json.loads(line)
         except json.JSONDecodeError:
             malformed += 1  # 조용히 넘기지 않는다 — 불완전한 대장에 100% 판정이 나온다
+            continue
+        if record.get("type") == "session_meta":
+            meta = record.get("payload") or {}
+            # A forked rollout can copy its parent's session_meta after its own.
+            # Keep the child's routing metadata until another forked meta replaces it.
+            if (meta.get("forked_from_id") is not None
+                    or not (isinstance(source, dict) and "subagent" in source)):
+                originator, source = meta.get("originator"), meta.get("source")
+                agent_path = meta.get("agent_path")
+            continue
+        if record.get("type") == "response_item" and isinstance(source, dict) and "subagent" in source:
+            payload = record.get("payload") or {}
+            if (isinstance(payload, dict) and payload.get("type") == "agent_message"
+                    and isinstance(agent_path, str) and agent_path
+                    and payload.get("recipient") == agent_path
+                    and isinstance(payload.get("author"), str)
+                    and payload["author"] != agent_path):
+                content = payload.get("content")
+                if isinstance(content, list):
+                    text = "\n".join(block["text"] for block in content
+                                     if isinstance(block, dict)
+                                     and block.get("type") == "input_text"
+                                     and isinstance(block.get("text"), str)).strip()
+                    if text:
+                        rows.append({"ts": record.get("timestamp"), "text": text,
+                                     "record": payload.get("id"), "client_id": None,
+                                     "kind": "system"})
             continue
         if record.get("type") != "event_msg":
             continue
@@ -348,12 +415,53 @@ def _codex_rows(handle) -> list[dict]:
         # payload 양쪽 표시를 여기서 한 번 걸러 같은 입력을 보게 한다.
         if record.get("isCompactSummary") or payload.get("isCompactSummary"):
             continue
-        if payload.get("type") != "user_message":
+        if payload.get("type") == "user_message":
+            text = payload.get("message")
+            if isinstance(text, str):
+                rows.append({"ts": record.get("timestamp"), "text": text,
+                             "client_id": payload.get("client_id")})
             continue
-        text = payload.get("message")
-        if not isinstance(text, str):
+        if payload.get("type") != "item_completed":
             continue
-        rows.append({"ts": record.get("timestamp"), "text": text})
+        item = payload.get("item")
+        if not isinstance(item, dict) or item.get("type") != "UserMessage":
+            continue
+        text = _user_text(item.get("content"))
+        # 이미지만 보낸 입력도 입력이다. 텍스트로만 행을 만들면 대장에서 빠지고, 그것이
+        # 전사의 유일한 입력이면 S5 경고까지 거짓으로 난다(R5-F1).
+        textless = not text.strip()
+        if textless:
+            text = _textless_text(item.get("content")) or text
+        if text:
+            # 항목 아이디를 레코드 아이디로 낸다 — 본문·시각이 같은 서로 다른 발화를 가른다.
+            rows.append({"ts": record.get("timestamp"), "text": text,
+                         "record": item.get("id"),
+                         "client_id": item.get("client_id"), "textless": textless})
+    for row in rows:
+        # The event channel identifies input, not its author. Keep caller briefs and
+        # automation in the ledger, but without human authority.
+        if isinstance(source, dict) and "subagent" in source:
+            human = originator == "Codex Desktop" and bool(row["client_id"])
+        elif originator in ("codex-tui",) and source == "cli":
+            human = True
+        elif originator == "Codex Desktop" and source == "vscode":
+            human = bool(row["client_id"]) and not row["text"].startswith("Automation:")
+        elif source == "exec" or originator == "codex_exec":
+            human = False
+        else:
+            # Legacy transcripts have no session_meta/client_id. Preserve their
+            # existing user_message interpretation; unknown modern sources get no
+            # human authority until their provenance is established.
+            human = originator is None and source is None
+        # 텍스트 없는 입력도 신분은 위 발화표대로 가른다 — 사람이 보낸 이미지를 `system`
+        # 으로 돌리면 사람 발화가 대장·집계에서 빠진다(R5-F1-R6). 인용할 원문이 없다는
+        # 사실은 신분이 아니라 `textless` 로 남겨 권위·꼬리에서만 뺀다.
+        if not row.get("textless"):
+            row.pop("textless", None)
+        # Human provenance still passes through the common harness-text check in
+        # read_session; a slash command in UserMessage is not a human instruction.
+        row["kind"] = None if human else "system"
+        del row["client_id"]
     return rows, malformed
 
 
@@ -610,7 +718,8 @@ def extract_utterances(path: Path, since=None, fmt: str = "claude") -> list[dict
     필드는 코드가 정본이고, 이 문서는 **무엇을 뜻하는지**만 적는다.
 
     `kind` 는 `user`(사람이 친 것) · `system`(하네스 래퍼) · `peer`(다른 세션이 보낸 것)
-    셋이고, `record` 는 호스트가 레코드에 단 아이디다(대화 꼬리와 잇는 값).
+    셋이고, `record` 는 호스트가 레코드에 단 아이디다(대화 꼬리와 잇는 값). `textless` 는
+    텍스트 없이 이미지 같은 것만 온 입력에만 붙는다 — 본문이 원문이 아니라 자리표시다.
 
     `fmt` 는 **어댑터가 명시한다**(`claude`|`codex`) — 코어가 내용으로 「어느 호스트 것인가」를
     추측하지 않는다. 벤더 사정은 어댑터가 알고, 코어에는 번역된 값만 온다.
@@ -629,7 +738,11 @@ def extract_utterances(path: Path, since=None, fmt: str = "claude") -> list[dict
 def read_session(paths, since=None, fmt: str = "claude", tail_limit: int = 30) -> dict:
     """체인을 **한 번 읽어** 대장·대화 꼬리·손상 줄·못 읽은 파일을 함께 낸다.
 
-    반환 `{"rows", "tail", "malformed", "unreadable"}`.
+    반환 `{"rows", "tail", "malformed", "unreadable", "human_total", "input_total"}`.
+
+    `human_total` 은 `since` 로 자르기 **전** 읽은 전사 전체의 사람 발화 수다.
+    S5의 빈 전사 판정은 별도 `input_total`을 쓴다. 발주 브리프처럼 사람이 치지 않은
+    입력도 읽었으면 경고하지 않고, 델타 구간만 비어 있어도 경고하지 않는다.
 
     **꼬리 행은 대장 행과 같은 객체다.** 사람 발화면 `uid` 를 그대로 갖고 있으므로
     「대장의 어느 발화가 꼬리에 있나」를 **이을 필요가 없다.** 앞 판은 둘을 따로 읽어
@@ -649,6 +762,7 @@ def read_session(paths, since=None, fmt: str = "claude", tail_limit: int = 30) -
     carried = set()
     malformed = 0
     unreadable: list[str] = []
+    input_total = 0
     for path in paths:
         try:
             with Path(path).open(encoding="utf-8") as handle:
@@ -657,14 +771,18 @@ def read_session(paths, since=None, fmt: str = "claude", tail_limit: int = 30) -
             unreadable.append(Path(path).name)
             continue
         malformed += broken
+        input_total += sum(raw.get("role", "user") == "user" for raw in raw_rows)
         fresh = []
         for raw in raw_rows:
             text = (raw.get("text") or "").strip()
             if not text:
                 continue
-            fresh.append({"ts": raw.get("ts"), "text": text,
-                          "kind": raw.get("kind"), "record": raw.get("record"),
-                          "role": raw.get("role") or "user"})
+            row = {"ts": raw.get("ts"), "text": text,
+                   "kind": raw.get("kind"), "record": raw.get("record"),
+                   "role": raw.get("role") or "user"}
+            if raw.get("textless"):
+                row["textless"] = True
+            fresh.append(row)
         # **레코드 아이디로 가른다.** 압축이 옮겨 적는 것은 같은 레코드라 아이디가 같고,
         # 서로 다른 발화는 본문과 시각이 같아도 다르다.
         collected.extend(row for row in fresh if _carry_key(row) not in carried)
@@ -692,13 +810,19 @@ def read_session(paths, since=None, fmt: str = "claude", tail_limit: int = 30) -
 
     # 꼬리는 **노이즈를 뺀** 대화의 마지막 `tail_limit` 건이다. 같은 목록에서 고르므로
     # 여기 든 사람 발화는 위에서 받은 `uid` 를 그대로 갖는다.
-    tail = [r for r in collected if r.get("kind") != "system"][-tail_limit:]
+    # 텍스트 없는 입력의 자리표시는 원문이 아니므로 원문 꼬리에 싣지 않는다.
+    tail = [r for r in collected
+            if r.get("kind") != "system" and not r.get("textless")][-tail_limit:]
+    # 사람인지는 신분(`kind`)으로 센다. 인용할 원문이 없는 사람 입력도 사람 발화다 —
+    # 권위 집합(`human_utterance_uids`)으로 세면 그것이 빠진다(R5-F1-R6).
+    human_total = sum(row.get("kind") == "user" for row in ledger)
 
     if since is not None:
         boundary = since
         ledger = [r for r in ledger if (parse_ts(r["ts"]) or _EPOCH) > boundary]
     return {"rows": ledger, "tail": tail,
-            "malformed": malformed, "unreadable": unreadable}
+            "malformed": malformed, "unreadable": unreadable,
+            "human_total": human_total, "input_total": input_total}
 
 
 def read_manifest(paths, since=None, fmt: str = "claude") -> dict:
@@ -755,15 +879,18 @@ def extract_utterances_from(paths, since=None, fmt: str = "claude") -> list[dict
     return out["rows"]
 
 def human_utterance_uids(rows: list[dict]) -> set[str]:
-    """대장 정본에서 **사람이 친 발화** UID만 낸다.
+    """대장 정본에서 **권위로 쓸 사람 발화** UID만 낸다.
 
     사람이 아닌 것도 대장에는 보존하되 다른 `kind` 를 단다 — 하네스 래퍼는 `system`,
     다른 세션이 보낸 발화는 `peer`. 결정 인용·상시 규율의 걸기와 풀기는 모두 이 집합만
     권위로 쓴다. 소비 지점마다 `kind` 조건을 덧대면 같은
     권한 회로가 다시 커지므로, 사람이 누구인지는 여기서 한 번만 정한다.
+
+    사람이 보냈어도 `textless`(이미지만 온 입력)는 뺀다 — 인용표에 실릴 것이 원문이 아니라
+    자리표시다. 사람 발화 수는 이 집합이 아니라 `kind` 로 센다(`read_session`).
     """
     return {str(row.get("uid")) for row in rows
-            if row.get("kind") == "user" and row.get("uid")}
+            if row.get("kind") == "user" and not row.get("textless") and row.get("uid")}
 
 
 def excerpt(text: str, limit: int = 120) -> str:

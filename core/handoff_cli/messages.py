@@ -121,6 +121,18 @@ _MESSAGES: dict[str, dict[str, str]] = {
             "빈 대장을 쓰면 「전수 처분」이 거짓이 되므로 진행하지 않는다 — "
             "`--transcript <경로>` 로 직접 주거나 호스트 경로 규칙을 갱신하라."
         ),
+        # R9-H2 S3 — 넘어온 값과 실제로 쓴 값을 **함께** 싣는다.
+        "warn_session_overridden": (
+            "세션 값 어긋남: 넘어온 세션 값 `{passed}` 이 이 세션의 `{env}`(`{used}`)와 "
+            "다르다. 넘어온 값은 쓰지 않았다 — 대장과 저장본의 `writer_session` 은 "
+            "`{used}` 로 정했다."
+        ),
+        # 경계 ② — 저장은 막지 않되 **시도한 경로를 산출에 남긴다.**
+        # 거부 결과에도 실린다 — 「저장했다」고 쓰지 않는다(저장 여부는 따로 온다).
+        "warn_save_transcript_not_found": (
+            "발화 대장 없음: 세션 {session_id} 의 트랜스크립트를 못 찾아 대장 검사를 할 수 "
+            "없다. 「세션 전체를 정리했다」고 쓰지 마라. 시도한 경로: {tried}"
+        ),
         "warn_compact_chain_broken": (
             "대장 부분 커버리지: {after} 는 자동압축으로 갈린 뒷부분인데, 앞부분 전사를 "
             "못 찾았다(직전 메시지 {logical_parent}). 앞 구간의 발화는 이 대장에 없다 — "
@@ -136,6 +148,13 @@ _MESSAGES: dict[str, dict[str, str]] = {
             "대장 부분 커버리지: {after} 의 앞 전사를 찾았으나 **읽지 못했다**(잠겼거나 "
             "권한이 없거나 손상). 앞 구간의 발화는 이 대장에 없다 — 「세션 전체를 "
             "정리했다」고 쓰지 마라. 그 파일을 읽을 수 있게 한 뒤 다시 받아라."
+        ),
+        # R9-H2 S5 — 전사 전체에서 입력을 하나도 읽지 못했다. 사람 발화 0건이나
+        # 새 발화 0건인 델타와는 다르다.
+        "warn_no_readable_input": (
+            "입력 판독 없음: 전사 {transcript} 를 찾았지만 전사 전체에서 입력을 하나도 "
+            "읽지 못했다. 빈 대장은 전수 처분의 증거가 아니다 — 전사 형식(`--format`·"
+            "`transcript_format`)과 호스트의 입력 기록 위치를 확인하라."
         ),
         "incidents_default": "- 기록된 사고 없음. **0건은 의심 신호다** — 정말 없었는지 다시 본다.",
         "incidents_note": (
@@ -155,6 +174,14 @@ _MESSAGES: dict[str, dict[str, str]] = {
             "**증거**(실측/추론/1회 관측) · **대신**(막았으면 대안). 개수 상한은 없다."
         ),
         "ledger_empty": "(발화 대장 없음 — 세션 식별자가 없어 전수 처분을 검증하지 못했다.)",
+        # 세션 값은 있었는데 전사를 못 찾았거나 전부 못 읽었다 — **0건인 대장과 다른 상태다.**
+        # 재개가 이 문구로 대장 없음을 가른다(R9-H2: 호스트 값이 `writer_session` 을 채우므로
+        # 그 값만으로는 대장이 없었다는 것이 안 보인다). 값을 끼우지 않는다 — 재개가 문구
+        # 그대로 대조한다. 시도한 경로는 저장 결과 경고에 있다.
+        "ledger_transcript_unavailable": (
+            "(발화 대장 없음 — 세션 값은 있었으나 전사를 찾거나 읽지 못해 전수 처분을 검증하지 "
+            "못했다. 시도한 경로는 저장 결과 경고에 있다.)"
+        ),
         "recap_goal_line": "> 목표: {summary}",
         "resume_standing_header": (
             "다음은 직전 세션까지 누적된 상시 규율이다 — 이 세션 전체에 그대로 적용하라. "
@@ -199,7 +226,7 @@ _MESSAGES: dict[str, dict[str, str]] = {
             "> 최근 대화 원문(도구 결과 제외) — CLI 가 트랜스크립트에서 그대로 삽입. "
             "요약이 아니라 육성이다. 방향과 어조는 여기서 읽는다."
         ),
-        "dialogue_empty": "(대화 꼬리 없음 — 세션 식별자가 없어 추출하지 못했다.)",
+        "dialogue_empty": "(대화 꼬리 없음 — 세션 식별자가 없거나 전사를 찾지 못해 추출하지 못했다.)",
         "dialogue_user_label": "사용자",
         "dialogue_assistant_label": "조수",
         "decision_interp_prefix": "해석(비권위): ",
@@ -470,6 +497,16 @@ _MESSAGES: dict[str, dict[str, str]] = {
             "guarantee false, so this stops — pass `--transcript <path>` or update the "
             "host path rule."
         ),
+        "warn_session_overridden": (
+            "Session value mismatch: the passed session value `{passed}` differs from this "
+            "session's `{env}` (`{used}`). The passed value was not used — the manifest "
+            "and the saved `writer_session` use `{used}`."
+        ),
+        "warn_save_transcript_not_found": (
+            "No utterance manifest: no transcript found for session {session_id}, so the "
+            "manifest check cannot run. Do not claim the whole session was accounted for. "
+            "Paths tried: {tried}"
+        ),
         "warn_compact_chain_broken": (
             "Partial manifest coverage: {after} is the tail half of a conversation split "
             "by auto-compaction, and the earlier transcript was not found (last message "
@@ -488,6 +525,12 @@ _MESSAGES: dict[str, dict[str, str]] = {
             "but could not be read (locked, no permission, or damaged). Those "
             "utterances are absent — do not claim the whole session was accounted "
             "for. Make that file readable and take the manifest again."
+        ),
+        "warn_no_readable_input": (
+            "No input read: transcript {transcript} was found, but no input was read "
+            "from the whole transcript. An empty manifest cannot establish complete "
+            "coverage. Check the transcript format (`--format` / `transcript_format`) "
+            "and where the host records input."
         ),
         "incidents_default": (
             "- No incidents recorded. **Zero is a suspicious signal** — look again."
@@ -514,6 +557,11 @@ _MESSAGES: dict[str, dict[str, str]] = {
         ),
         "ledger_empty": (
             "(No utterance ledger — no session id, so full accounting was not verified.)"
+        ),
+        "ledger_transcript_unavailable": (
+            "(No utterance ledger — a session value was given but the transcript could not "
+            "be found or read, so full accounting was not verified. The paths tried are in "
+            "the save result warnings.)"
         ),
         "recap_goal_line": "> Goal: {summary}",
         "resume_standing_header": (
@@ -561,7 +609,10 @@ _MESSAGES: dict[str, dict[str, str]] = {
             "straight from the transcript. Not a summary but the actual voice; read "
             "direction and tone here."
         ),
-        "dialogue_empty": "(No dialogue tail — no session id, so nothing was extracted.)",
+        "dialogue_empty": (
+            "(No dialogue tail — no session id or no transcript found, so nothing was "
+            "extracted.)"
+        ),
         "dialogue_user_label": "User",
         "dialogue_assistant_label": "Assistant",
         "decision_interp_prefix": "Reading (non-authoritative): ",

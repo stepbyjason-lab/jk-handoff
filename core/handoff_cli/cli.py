@@ -424,7 +424,45 @@ def _conflict_report(topic: str, project_name: str, detail_path: str, other: str
     return "\n".join(lines)
 
 
-def _save_transcripts(payload: dict, cwd: str) -> tuple[list, list[dict]]:
+#: Claude Code 가 자기 세션에 붙이는 값(R9-H2 S2). 전사 파일명과 같은 축이다 — 실측으로
+#: 앱 세션(`CLAUDE_CODE_HOST_SESSION_ID`, `local_…`)과 훅이 찍는 값은 다른 축이었고,
+#: 어댑터에 쓸 값을 예시로 적어 뒀는데도 다른 축의 값이 두 번 넘어왔다(기획 4-d).
+_CLAUDE_SESSION_ENV = "CLAUDE_CODE_SESSION_ID"
+
+
+def _session_axis(passed, fmt="claude", source=None) -> tuple[str | None, str | None]:
+    """대장·`writer_session` 이 쓸 세션 값과, 넘어왔지만 **쓰지 않은** 값.
+
+    **호스트가 세션에 붙인 값이 넘어온 값을 이긴다.** 넘길 값을 고르게 두면 틀리게 고를
+    수 있고, 실제로 두 번 그랬다. 호스트가 준 값은 고를 것이 아니므로 코어가 직접 읽는다.
+    이긴 값이 넘어온 값과 다르면 둘째 값으로 돌려준다 — 호출자가 경고에 두 값을 함께
+    남긴다(S3). 조용히 갈아 끼우면 어댑터가 틀린 값을 넘긴다는 사실이 다시 안 보인다.
+
+    **Claude 전사를 읽는 Claude Code 저장만** 이 값을 읽는다. Codex 는 전사 경로를 DB
+    조회로 얻어 넘기고 세션 값도 자기 축(`CODEX_THREAD_ID`)이다 — Claude Code 가 띄운
+    Codex 는 이 변수를 물려받으므로, 형식과 출처로 가르지 않으면 부모 세션의 값이 Codex
+    저장본에 박힌다.
+
+    호스트 값이 없으면 지금까지와 같다 — 넘어온 값을 쓴다.
+    """
+    passed = str(passed).strip() if passed else ""
+    host = ""
+    if fmt == "claude" and str(source or "claude-code").strip() != "codex":
+        host = (os.environ.get(_CLAUDE_SESSION_ENV) or "").strip()
+    if host:
+        return host, (passed if passed and passed != host else None)
+    return passed or None, None
+
+
+def _session_warning(used: str, overridden: str, lang: str) -> str:
+    """S3 — 넘어온 값과 실제로 쓴 값을 **함께** 싣는다. 한쪽만 적으면 어긋남이 안 보인다."""
+    return messages.msg("warn_session_overridden", lang,
+                        passed=detail.sanitize_line(overridden),
+                        used=detail.sanitize_line(used), env=_CLAUDE_SESSION_ENV)
+
+
+def _save_transcripts(payload: dict, cwd: str,
+                      session: str | None = None) -> tuple[list, list[dict]]:
     """저장 payload 가 가리키는 전사 **전부**와 못 이은 사유. 없으면 `([], [])`.
 
     **저장 경로에서 전사를 여는 자리는 여기 하나다.** 대장·저작 모델·손상 줄 계수·
@@ -434,20 +472,27 @@ def _save_transcripts(payload: dict, cwd: str) -> tuple[list, list[dict]]:
     대화 꼬리에서만 빠짐(7건) · 압축 재개문이 변곡점을 지어냄. 자동압축이 대화를
     가르는 것이 여섯 번째다.
 
-    세션 아이디가 없거나 전사를 못 찾으면 **조용히 빈 목록**이다 — 저장을 막지
-    않는다. 전수 보증이 없다는 사실은 frontmatter 의 `writer_session: null` 이
-    그대로 드러낸다(어댑터 규율 8항).
+    `session` 은 `cmd_save` 가 `_session_axis` 로 정한 값이다. 안 주면 여기서 같은
+    함수로 정한다 — 전사를 찾는 값과 `writer_session` 에 적는 값이 갈리지 않게.
+
+    세션 값이 없으면 **조용히 빈 목록**이다 — 저장을 막지 않는다. 전사를 찾다 못
+    찾았으면 빈 목록과 **시도한 경로를 실은 사유 한 건**이다(경계 ②). 저장은 계속하되
+    그 사유가 저장 산출의 경고로 나간다 — 호스트가 세션 값을 주면 대장이 없어도
+    `writer_session` 이 차므로, 그 값만으로는 대장이 없었다는 것이 안 보인다.
     """
-    session_id = payload.get("session_id")
-    if not session_id:
+    fmt = payload.get("transcript_format", "claude")
+    if session is None:
+        session, _ = _session_axis(payload.get("session_id"), fmt, payload.get("source"))
+    if not session:
         return [], []
     try:
         path = transcript_mod.derive_transcript_path(
-            session_id, cwd, payload.get("transcript"))
-    except transcript_mod.TranscriptNotFound:
-        return [], []
-    return transcript_mod.compact_chain(
-        path, fmt=payload.get("transcript_format", "claude"))
+            session, cwd, payload.get("transcript"))
+    except transcript_mod.TranscriptNotFound as exc:
+        return [], [{"reason": "transcript_not_found", "session": session,
+                     "tried": list(exc.tried), "logical_parent": "", "trigger": None,
+                     "after": ""}]
+    return transcript_mod.compact_chain(path, fmt=fmt)
 
 
 def _measured_writer_model(chain: list, payload: dict) -> str | None:
@@ -473,12 +518,26 @@ def _save_reading(chain: list, payload: dict) -> dict:
     범위를 본다.
     """
     if not chain:
-        return {"rows": [], "tail": [], "malformed": 0, "unreadable": []}
+        return {"rows": [], "tail": [], "malformed": 0, "unreadable": [],
+                "human_total": 0, "input_total": 0}
     return transcript_mod.read_session(
         chain,
         transcript_mod.parse_ts(payload.get("covers_from")),
         fmt=payload.get("transcript_format", "claude"),
     )
+
+
+def _no_readable_input(chain: list, reading: dict) -> bool:
+    """전사를 찾아 읽었는데 **전사 전체**에서 입력이 0건인가(R9-H2 S5).
+
+    저장과 `utterances` 가 이 한 함수로 가른다 — 둘이 따로 정하면 어댑터가 받는 대장과
+    저장이 서로 다른 판정을 낸다. 델타 구간에 새 발화가 없는 것은 해당하지 않는다
+    (`input_total` 이 `since` 로 자르기 전 값이다). 읽은 전사가 하나도 없으면 이것도
+    해당하지 않는다 — 못 찾음·못 읽음은 이미 자기 경고를 낸다.
+    """
+    if not chain or len(reading["unreadable"]) >= len(chain):
+        return False
+    return reading.get("input_total", 0) == 0
 
 
 def _save_manifest(chain: list, payload: dict) -> list[dict]:
@@ -487,9 +546,10 @@ def _save_manifest(chain: list, payload: dict) -> list[dict]:
     어댑터가 개수를 신고하게 두지 않는 이유는 하나다 — 신고는 이 프로젝트에서 세 번 깨졌다
     (금지어 우회 3회 · Haiku 의 허위 개수 · 변곡점 7개). 대장도 밀도도 코어가 센다.
 
-    `session_id` 가 없으면(옛 어댑터·런타임 미제공) 대장 검사와 밀도 줄을 **건너뛴다** —
-    저장을 막지는 않는다. 전수 보증이 없다는 사실은 frontmatter 의 `writer_session: null` 이
-    그대로 드러낸다.
+    세션 값이 없거나(옛 어댑터·런타임 미제공) 전사를 못 찾으면 대장 검사와 밀도 줄을
+    **건너뛴다** — 저장을 막지는 않는다. 전수 보증이 없다는 사실은 본문의 대장 절이
+    드러내고 재개가 그것을 읽어 표식을 단다. `writer_session` 은 그 표지가 못 된다 —
+    호스트가 세션 값을 주면 대장이 없어도 찬다(R9-H2 S2).
 
     **어댑터가 `utterances` 로 받는 대장과 같은 범위를 봐야 한다.** 둘이 갈리면
     같은 번호가 서로 다른 발화를 가리키고, 코어가 넣는 지문과 어댑터가 넘긴 처분이
@@ -810,6 +870,14 @@ _INCIDENT_SLOTS = ("증상", "원인", "수명", "잡은 것", "처방")
 _INCIDENT_CATCHER_RE = re.compile(r"\*\*잡은 것\*\*\s*[:：]\s*([^\n]+)")
 
 
+def _textless_human(row: dict) -> bool:
+    """사람이 보냈지만 인용할 원문이 없는(이미지만 온) 대장 행인가.
+
+    권위 집합에서 빠지는 이유가 「사람이 아님」이 아니므로 거부 코드를 따로 준다.
+    """
+    return row.get("kind") == "user" and bool(row.get("textless"))
+
+
 def _split_decisions(payload: dict, project: str, topic: str, manifest: list[dict]):
     """구조화 결정 배열 → (사용자 결정, chair 제안, 인용표, 위반).
 
@@ -849,8 +917,12 @@ def _split_decisions(payload: dict, project: str, topic: str, manifest: list[dic
                 # 사람이 친 발화가 아님」은 고치는 방법이 정반대다 — 앞은 번호를
                 # 바로잡고, 뒤는 그 발화를 출처로 쓰겠다는 판단 자체를 접어야 한다.
                 # 한 이름으로 묶으면 어댑터가 번호부터 의심해 헛돌다 강등된다(규율 7).
+                # 사람이 보냈지만 텍스트가 없는 입력은 사람이 아니라고 말하지 않는다 —
+                # 인용할 원문이 없을 뿐이다(R5-F1-R6).
                 problems.append({
                     "code": ("decision_source_unknown" if uid not in manifest_by_uid
+                             else "decision_source_textless"
+                             if _textless_human(manifest_by_uid[uid])
                              else "decision_source_not_human"),
                     "uid": entry["id"], "found": uid})
         (user_rows if uids else chair_rows).append(entry)
@@ -861,23 +933,39 @@ def _split_decisions(payload: dict, project: str, topic: str, manifest: list[dic
     return user_rows, chair_rows, quotes, problems
 
 
+#: 한 발화를 **함께 출처로 쓸 수 있는** 절들(R9-H2 S1). 대장 행은 목적지를 하나만 갖는데
+#: 한 발화가 결정을 정하고 규율을 걸고 다음 행동을 지목하는 일은 실물에서 났다 — 목적지가
+#: 같은 절만 인용을 인정하면 나머지 절이 그 발화를 인용한 저장이 거부됐다.
+_SHARED_SOURCE_SECTIONS = ("Decisions", "Standing Directives", "Exact Next Step")
+
+
 def _check_decision_ledger_link(user_rows: list, ledger: list[dict],
                                 section: str = "Decisions",
-                                code: str = "decision_ledger_mismatch") -> list[dict]:
+                                code: str = "decision_ledger_mismatch",
+                                shared: tuple[str, ...] = ()) -> list[dict]:
     """**대장과 결정이 서로를 가리키는가.** 한쪽만 고치는 것을 불가능하게 만든다.
 
     지금까지 대장의 `note` 는 *"madi-r48f-D4 원문"* 이라고 **적혀만 있고 아무도 대조하지
     않았다.** 그래서 대장은 통과하는데 결정 본문이 반대로 쓰이는 일이 생겼다.
+
+    **두 방향의 잣대가 다르다.** 대장이 이 절로 처분했으면 이 절이 인용해야 한다 — 그대로다.
+    이 절이 인용했으면 대장 처분이 `shared` 의 한 절이면 된다. 처분된 그 절이 정말
+    인용했는지는 그 절의 호출이 앞 방향으로 잰다 — 그래서 `shared` 에는 **이 저장에서 인용
+    대조가 실제로 도는 출처 절만** 넣는다. 비우면 같은 절만 받는다. 처분이 없거나 그 밖의
+    절이면 여전히 거부한다.
     """
     placed = {r["uid"] for r in ledger if r["section"] == section}
     cited = {u for e in user_rows for u in e["source"]}
+    accepted = shared if section in shared else (section,)
+    disposed = {r["uid"]: r["section"] for r in ledger}
     problems = []
     for uid in sorted(placed - cited):
         problems.append({"code": code, "uid": uid,
                          "found": f"대장은 {section} 로 처분했는데 인용한 항목이 없다"})
-    for uid in sorted(cited - placed):
+    for uid in sorted(u for u in cited if disposed.get(u) not in accepted):
         problems.append({"code": code, "uid": uid,
-                         "found": f"항목이 인용했는데 대장 처분이 {section} 가 아니다"})
+                         "found": f"항목이 인용했는데 대장 처분이 {' · '.join(accepted)} 중 "
+                                  f"어디도 아니다(대장: {disposed.get(uid) or '처분 없음'})"})
     return problems
 
 
@@ -916,8 +1004,10 @@ def _split_standing(payload: dict, project: str, topic: str,
                 # 승계·주입을 막아야 하는데, `decision_source_unknown` 을 쓰면 그 판정에
                 # 안 걸려 출처가 존재하지 않는 규율이 다음 세션의 지시로 나갔다(외부 리뷰).
                 # 결정과 같은 이유로 **두 원인을 가르되**, 새 코드도 오염으로 센다.
-                problems.append({"code": ("standing_source_unknown"
-                                          if not any(r["uid"] == uid for r in manifest)
+                row = next((r for r in manifest if r["uid"] == uid), None)
+                problems.append({"code": ("standing_source_unknown" if row is None
+                                          else "standing_source_textless"
+                                          if _textless_human(row)
                                           else "standing_source_not_human"),
                                  "uid": entry["id"], "found": uid})
         # ID 는 승계·폐기가 겨누는 **유일한 손잡이**다. 형식이 어긋나거나 겹치면 어느
@@ -959,6 +1049,7 @@ _STANDING_TAINT_CODES = frozenset({
     "standing_source_missing",
     "standing_source_unknown",
     "standing_source_not_human",
+    "standing_source_textless",
     "standing_id_malformed",
     "standing_id_duplicate",
     "standing_ledger_mismatch",
@@ -1272,15 +1363,24 @@ def cmd_save(payload: dict, cwd: str, global_root: str | None = None) -> dict:
     if repo.project_id_uncommitted(root):
         warnings.append(messages.msg("warn_project_id_uncommitted", lang))
 
+    # 세션 값은 **한 번 정해** 전사 찾기와 `writer_session` 이 같이 쓴다(R9-H2 S2).
+    # 둘이 따로 정하면 대장은 한 세션에서 나오고 저장본은 다른 세션을 적는다.
+    session, overridden = _session_axis(
+        payload.get("session_id"), payload.get("transcript_format", "claude"), source)
+    if overridden:
+        warnings.append(_session_warning(session, overridden, lang))
+
     # **여기서 한 번 구해 아래 소비자 넷이 나눠 쓴다** — 대장 · 저작 모델 ·
     # 손상 줄 계수 · 대화 꼬리. 각자 구하면 체인 탐색이 네 번 돌고, 무엇보다
     # 넷이 서로 다른 범위를 볼 수 있다.
-    transcripts, transcript_gaps = _save_transcripts(payload, cwd)
+    transcripts, transcript_gaps = _save_transcripts(payload, cwd, session)
     warnings.extend(
         messages.msg(_CHAIN_GAP_MESSAGES.get(gap.get("reason"),
                                              "warn_compact_chain_incomplete"),
                      lang, after=gap["after"],
-                     logical_parent=gap["logical_parent"])
+                     logical_parent=gap["logical_parent"],
+                     session_id=gap.get("session") or "",
+                     tried=" | ".join(gap.get("tried") or []) or "-")
         for gap in transcript_gaps)
 
     git = repo.git_meta(root)
@@ -1324,7 +1424,10 @@ def cmd_save(payload: dict, cwd: str, global_root: str | None = None) -> dict:
         "writer_model": (_measured_writer_model(transcripts, payload)
                          or payload.get("writer_model") or payload.get("model")),
         "writer_effort": payload.get("writer_effort") or os.environ.get("HANDOFF_EFFORT"),
-        "writer_session": payload.get("session_id") or os.environ.get("HANDOFF_SESSION_ID"),
+        # **세션만은 예외다(R9-H2 S2)** — 번역을 어댑터에 맡겼더니 다른 축의 값이 두 번
+        # 넘어왔다. 대장을 찾은 것과 같은 값(`_session_axis`)을 적는다. 그 값이 없을 때만
+        # 옛 폴백으로 간다.
+        "writer_session": session or os.environ.get("HANDOFF_SESSION_ID"),
         # 조직이 이 작업을 부르는 이름(라운드·티켓·에픽). **저장하는 세션이 적는다** —
         # 그 세션은 사용자와 대화하며 확정한 값을 들고 있다. 재개는 이 값을 새로
         # 판단하지 않고 실린 것을 옮기기만 한다.
@@ -1368,11 +1471,16 @@ def cmd_save(payload: dict, cwd: str, global_root: str | None = None) -> dict:
     # 모델은 UID 만 가리킨다. 인용문·주체·절 배치는 CLI 가 만든다.
     user_rows, chair_rows, quotes, dec_problems = _split_decisions(
         payload, name, topic, manifest)
+    # 출처 절 셋 가운데 **인용 대조가 실제로 도는 절**(R9-H2 S1). 산문 결정은 인용을 셀 수
+    # 없어 결정 대조가 안 돈다 — 그때 Decisions 처분을 다른 절 인용이 받아 주면 그 처분은
+    # 아무도 안 잰다.
+    linked = tuple(s for s in _SHARED_SOURCE_SECTIONS
+                   if s != "Decisions" or user_rows is not None)
     if user_rows is not None:
         sections["decisions"] = detail.render_decisions(user_rows, quotes, lang)
         sections["unapproved"] = detail.render_decisions(chair_rows, quotes, lang)
         if manifest:
-            dec_problems += _check_decision_ledger_link(user_rows, ledger)
+            dec_problems += _check_decision_ledger_link(user_rows, ledger, shared=linked)
 
     # ── 상시 규율: 인용(권위) + CLI 자동 승계 (압축의 「축자 보존」 이식) ──
     quotes_all = {r["uid"]: r["text"] for r in manifest}
@@ -1402,7 +1510,7 @@ def cmd_save(payload: dict, cwd: str, global_root: str | None = None) -> dict:
     if manifest:
         standing_problems += _check_decision_ledger_link(
             standing_rows, ledger, section="Standing Directives",
-            code="standing_ledger_mismatch")
+            code="standing_ledger_mismatch", shared=linked)
     dec_problems += standing_problems
 
     # 다음 행동의 근거 발화 — 지시가 원문으로 있어야 손이 바로 움직인다(5요건 ②).
@@ -1425,7 +1533,9 @@ def cmd_save(payload: dict, cwd: str, global_root: str | None = None) -> dict:
         # `kind: system` 줄)의 UID 를 대면 인용이 붙고 미승인 표시는 안 붙었다.
         # 사람이 시키지 않은 행동이 사용자 근거가 있는 것처럼 보였다(외부 리뷰 실측).
         if uid not in human_uids:
-            dec_problems.append({"code": "exact_source_not_human",
+            row = next((r for r in manifest if r["uid"] == uid), {})
+            dec_problems.append({"code": ("exact_source_textless" if _textless_human(row)
+                                          else "exact_source_not_human"),
                                  "uid": "exact_next_step", "found": uid})
             continue
         quote_lines += [f"> {line}".rstrip() for line in quotes_all[uid].splitlines()]
@@ -1448,11 +1558,12 @@ def cmd_save(payload: dict, cwd: str, global_root: str | None = None) -> dict:
             + sections["exact_next_step"].strip())
     # 결정·규율과 **같은 규칙**을 적용한다. 이게 없으면 대장은 「다음 행동으로 담았다」고
     # 하는데 정작 근거 원문이 없는 저장이 통과하고, 반대로 다른 절로 처분한 UID 를
-    # 인용해도 통과했다(외부 리뷰 재현).
+    # 인용해도 통과했다(외부 리뷰 재현). 출처 절끼리의 공동 인용만은 받는다(R9-H2 S1 —
+    # 한 발화가 결정·규율·다음 행동을 함께 맡는다).
     if manifest:
         dec_problems += _check_decision_ledger_link(
             [{"source": next_src}], ledger, section="Exact Next Step",
-            code="next_step_ledger_mismatch")
+            code="next_step_ledger_mismatch", shared=linked)
 
     schema_problems = _check_ledger(manifest, ledger, sections) if manifest else []
     schema_problems += dec_problems
@@ -1480,6 +1591,11 @@ def cmd_save(payload: dict, cwd: str, global_root: str | None = None) -> dict:
     for member in reading["unreadable"]:
         warnings.append(messages.msg("warn_compact_chain_unreadable", lang,
                                      after=member, logical_parent=""))
+    # **찾고도 입력을 하나도 읽지 못하면 소리 낸다(R9-H2 S5).** 조용히 두면 빈 대장이 처분할
+    # 것이 없는 정상 저장처럼 나간다 — Codex 가 발화 자리를 옮긴 뒤 실제로 그렇게 나갔다.
+    if _no_readable_input(transcripts, reading):
+        warnings.append(messages.msg("warn_no_readable_input", lang,
+                                     transcript=transcripts[-1].name))
 
     if schema_problems and not payload.get("force_schema"):
         out = _result("save", root, name, project_id,
@@ -1502,8 +1618,14 @@ def cmd_save(payload: dict, cwd: str, global_root: str | None = None) -> dict:
         warnings.append(messages.msg("warn_schema_demoted", lang,
                                      count=len(schema_problems)))
 
+    # 세션 값이 있었는데 읽은 전사가 하나도 없으면 대장이 **없는** 것이다 — 델타 구간에 새
+    # 발화가 0건인 대장과 다르다. 둘을 같은 문구로 두면 재개가 정상 저장까지 불완전으로
+    # 표시한다. 본문이 둘을 가르고 재개가 그것을 읽는다(R9-H2).
+    ledger_unavailable = bool(session) and (
+        not transcripts or len(reading["unreadable"]) >= len(transcripts))
     body = detail.assemble_body(meta, sections, payload.get("files_touched", []),
-                               created_human, lang, ledger=ledger, dialogue=dialogue)
+                               created_human, lang, ledger=ledger, dialogue=dialogue,
+                               ledger_unavailable=ledger_unavailable)
     if manifest:
         # 밀도 줄은 **CLI 가** 계산해 대장 머리에 박는다 — 어댑터가 쓰면 자기 신고다.
         body = body.replace("## Utterance Ledger\n\n",
@@ -1768,10 +1890,13 @@ def _previous_save_boundary(root: str, topic: str) -> tuple[str | None, int, str
 _CHAIN_GAP_MESSAGES = {
     "predecessor_missing": "warn_compact_chain_broken",
     "unreadable": "warn_compact_chain_unreadable",
+    # 저장 경로만 낸다(`_save_transcripts`). `utterances` 는 못 찾으면 `ok: false` 와
+    # `tried` 로 따로 끝나므로 이 사유를 만나지 않는다.
+    "transcript_not_found": "warn_save_transcript_not_found",
 }
 
 
-def cmd_utterances(cwd: str, session_id: str, root: str | None = None,
+def cmd_utterances(cwd: str, session_id: str | None, root: str | None = None,
                    transcript: str | None = None, topic: str | None = None,
                    since: str | None = None, fmt: str = "claude",
                    scope: str = "auto") -> dict:
@@ -1796,15 +1921,23 @@ def cmd_utterances(cwd: str, session_id: str, root: str | None = None,
 
     `auto` 를 기본으로 둔 이유: 대부분은 한 세션 한 번 저장이고, 그때 `full` 을 매번 치게 하면
     플래그가 의례가 된다. 판단이 필요한 자리에서만 사용자가 못박는다.
+
+    세션 값은 저장과 **같은 함수**(`_session_axis`)로 정한다 — Claude 형식이면
+    `CLAUDE_CODE_SESSION_ID` 가 `session_id` 인자를 이긴다. 둘이 갈리면 어댑터가 받는
+    대장과 저장이 싣는 대장이 서로 다른 전사에서 나온다.
     """
     resolved = repo.resolve_root(cwd, root)
     name = repo.project_name(resolved)
+    lang = messages.resolve_lang(None)
+    session_id, overridden = _session_axis(session_id, fmt)
+    head_warnings = ([_session_warning(session_id, overridden, lang)]
+                     if overridden else [])
     try:
         path = transcript_mod.derive_transcript_path(session_id, cwd, transcript)
     except transcript_mod.TranscriptNotFound as exc:
         out = _result("utterances", resolved, name, repo.read_project_id(resolved),
-                      [messages.msg("warn_transcript_not_found", messages.resolve_lang(None),
-                                    session_id=session_id)],
+                      head_warnings + [messages.msg("warn_transcript_not_found", lang,
+                                                    session_id=session_id or "-")],
                       {"found": False, "tried": exc.tried, "utterances": [], "count": 0})
         out["ok"] = False
         return out
@@ -1850,6 +1983,8 @@ def cmd_utterances(cwd: str, session_id: str, root: str | None = None,
     reading = transcript_mod.read_session(
         chain, transcript_mod.parse_ts(boundary), fmt=fmt)
     rows = reading["rows"]
+    # 저장과 같은 함수로 가른다. 못 읽은 전사를 빼기 **전** 체인으로 판정한다.
+    no_input = _no_readable_input(chain, reading)
     if reading["unreadable"]:
         lost = set(reading["unreadable"])
         chain_gaps = chain_gaps + [
@@ -1877,14 +2012,17 @@ def cmd_utterances(cwd: str, session_id: str, root: str | None = None,
     recap_span = detail.recap_span(manifest_rows, reading["tail"])
     # 이음매가 끊겼으면 **소리 낸다.** 이 자리를 조용히 두면 부분 커버리지가 전수로
     # 보고되고, 그것이 이 대장 전체를 무의미하게 만든다.
-    lang = messages.resolve_lang(None)
     # 사유가 달라도 결론은 하나다 — 앞 구간이 이 대장에 없다. 다만 **무엇을 해야
     # 하는지**가 달라서 문구를 가른다(옛 전사를 직접 주기 / 읽기 권한을 보기).
-    warnings = [messages.msg(_CHAIN_GAP_MESSAGES.get(gap.get("reason"),
-                                                    "warn_compact_chain_incomplete"),
-                             lang, after=gap["after"],
-                             logical_parent=gap["logical_parent"])
-                for gap in chain_gaps]
+    warnings = head_warnings + [
+        messages.msg(_CHAIN_GAP_MESSAGES.get(gap.get("reason"),
+                                            "warn_compact_chain_incomplete"),
+                     lang, after=gap["after"],
+                     logical_parent=gap["logical_parent"])
+        for gap in chain_gaps]
+    if no_input:
+        warnings.append(messages.msg("warn_no_readable_input", lang,
+                                     transcript=path.name))
     return _result("utterances", resolved, name, repo.read_project_id(resolved), warnings, {
         "found": True,
         "transcript": str(path),
@@ -1892,8 +2030,10 @@ def cmd_utterances(cwd: str, session_id: str, root: str | None = None,
         "transcript_chain": [p.name for p in chain],
         # **커버리지는 `scope` 와 다른 축이다.** `scope` 는 「어디부터 덮기로 했나」이고
         # 이것은 「덮기로 한 것을 실제로 다 읽었나」다. 끊긴 이음매가 있으면 `partial`
-        # 이며, 그때 `scope: "full"` 을 전수로 읽으면 안 된다.
-        "coverage": "partial" if chain_gaps else "complete",
+        # 이며, 그때 `scope: "full"` 을 전수로 읽으면 안 된다. 다 읽었는데 전사 전체에서
+        # 읽은 입력이 0건이면 `no_input` 이다(R9-H2 S5) — 빈 대장은 전수의 증거가 아니다.
+        "coverage": ("partial" if chain_gaps
+                     else "no_input" if no_input else "complete"),
         "coverage_gaps": chain_gaps,
         # 요약이 덮을 구간의 경계. `null` 이면 꼬리와 겹치는 자리를 못 찾았다는 뜻이고
         # 그때는 전 구간을 요약한다 — 저장본 문면과 같은 규칙이다.
@@ -2209,7 +2349,12 @@ def cmd_resume(cwd: str, topic: str, root: str | None = None) -> dict:
     trust_reasons: list[str] = []
     if str(front.get("schema_demoted", "")).lower() == "true":
         trust_reasons.append("schema_demoted")
-    if not front.get("writer_session") or front.get("writer_session") == "null":
+    # `writer_session` 만 보면 안 된다 — 호스트가 세션 값을 주면 전사를 못 찾아 대장이
+    # 없어도 그 값이 찬다(R9-H2 S2). 그런 저장본은 대장 절에 **못 찾음 문구**를 싣는다.
+    # 표가 없다는 것으로 가르지 않는다 — 델타 구간에 새 발화가 0건인 정상 저장도 표가 없다.
+    ledger_block = detail.extract_section_block(body, "Utterance Ledger")
+    if (not front.get("writer_session") or front.get("writer_session") == "null"
+            or _is_placeholder(ledger_block, "ledger_transcript_unavailable")):
         trust_reasons.append("utterance_ledger_absent")
     if format_generation == "unsupported":
         trust_reasons.append("body_contract_unsupported")

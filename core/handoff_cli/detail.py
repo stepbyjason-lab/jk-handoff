@@ -150,15 +150,20 @@ INCIDENT_CATCHERS = ("자체검증", "테스트", "외부리뷰", "사용자지�
 LEDGER_NONE = "없음"
 
 
-def render_ledger(rows: list, lang: str = "ko") -> str:
+def render_ledger(rows: list, lang: str = "ko", unavailable: bool = False) -> str:
     """처분 대장을 마크다운 표로 렌더한다. 밀도 줄은 CLI 가 따로 얹는다.
 
     **어댑터는 배열을 넘기고 표는 CLI 가 만든다.** 마크다운을 넘겨받아 정규식으로 파싱했더니
     형식 사고가 반복됐다(표만 검사하는 검사가 목록 형식에서 안 돌던 일, 앵커 수로 뭉침을
     잡으려다 헛짚은 일). 구조로 받으면 검사가 전부 dict 연산이 된다.
+
+    `unavailable` 은 세션 값은 있었는데 전사를 못 찾았거나 못 읽은 저장이다. 행이 0건인
+    대장(델타 구간에 새 발화가 없음)과 **다른 문구**를 싣는다 — 재개가 그 문구로 대장
+    없음을 가른다(R9-H2).
     """
     if not rows:
-        return messages.msg("ledger_empty", lang)
+        return messages.msg("ledger_transcript_unavailable" if unavailable
+                            else "ledger_empty", lang)
     out = ["| UID | 누구 | 지문 | 담긴 곳 | 무엇이 남았나 |", "|---|---|---|---|---|"]
     for row in rows:
         uid = str(row.get("uid", "")).strip()
@@ -303,7 +308,7 @@ def recap_span(ledger: list, dialogue: list) -> list[str]:
 
 def assemble_body(meta: dict, sections: dict, files_touched: list, created_human: str,
                   lang: str = "ko", ledger: list | None = None,
-                  dialogue: list | None = None) -> str:
+                  dialogue: list | None = None, ledger_unavailable: bool = False) -> str:
     """라이브 Body Template 18헤딩을 바이트 결정적으로 조립한다.
 
     **13개는 어댑터가 채우는 절**이고, 넷(`Git State`·`Files Touched`·`Utterance Ledger`·
@@ -340,7 +345,7 @@ def assemble_body(meta: dict, sections: dict, files_touched: list, created_human
     else:
         files_block = messages.msg("files_touched_empty", lang)
 
-    ledger_block = render_ledger(ledger or [], lang)
+    ledger_block = render_ledger(ledger or [], lang, unavailable=ledger_unavailable)
     dialogue_block = render_dialogue(dialogue or [], lang)
 
     # **요약이 덮을 집합을 CLI 가 계산해 못박는다.** 「고르게 쓰라」는 훈계로는 최신성

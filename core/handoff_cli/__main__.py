@@ -112,7 +112,11 @@ def main(argv=None) -> int:
 
     p_utt = sub.add_parser("utterances")
     p_utt.add_argument("--root", default=None)
-    p_utt.add_argument("--session", required=True, help="저작 세션 id")
+    # 필수가 아니다(R9-H2 S2) — Claude 형식이면 코어가 `CLAUDE_CODE_SESSION_ID` 를 직접
+    # 읽고 그 값이 이긴다. 넘긴 값이 다르면 경고에 두 값이 함께 남는다.
+    p_utt.add_argument("--session", default=None,
+                       help="저작 세션 id. Claude 형식이면 CLAUDE_CODE_SESSION_ID 가 이 값을 "
+                            "이긴다(다르면 경고)")
     p_utt.add_argument("--transcript", default=None, help="트랜스크립트 경로(정본). 없으면 유도")
     p_utt.add_argument("--topic", default=None,
                        help="주면 그 토픽의 직전 저장본 이후만 (한 세션 두 번째 저장)")
