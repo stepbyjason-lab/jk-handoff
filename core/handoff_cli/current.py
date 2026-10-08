@@ -219,11 +219,6 @@ def regenerate_current(global_root: str, name: str, project_id: str, root: str,
     if existing_text and guard.has_conflict_markers(existing_text):
         warnings.append(messages.msg("warn_conflict_marker", lang))
         return GlobalResult(False, str(current_path), "skipped", warnings, "conflict markers")
-    pid_global = handoffs_base(global_root).parent  # writer-local root, e.g. ~/.claude or ~/.codex
-    if guard.remote_ahead(str(pid_global)):
-        warnings.append(messages.msg("warn_remote_ahead", lang, pid_global=pid_global))
-        return GlobalResult(False, str(current_path), "skipped", warnings, "remote ahead")
-
     # 집계 재생성.
     topics = detail.scan_topics(root, include_archived=False, lang=lang)
     recent = _parse_recent(existing_text)

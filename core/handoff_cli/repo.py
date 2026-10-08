@@ -68,11 +68,17 @@ def iso8601(dt: datetime) -> str:
 
 
 def run_git(root: str, *args: str) -> subprocess.CompletedProcess:
-    """`git -C <root> <args>` 실행. 네트워크 서브커맨드는 거부한다."""
+    """`git -C <root> <args>` 실행. 네트워크 서브커맨드는 거부한다.
+
+    git 은 입력을 받지 않으므로 표준 입력을 `DEVNULL` 로 못박는다. 비워 두면 부모의
+    표준 입력 핸들을 복제하는데, 그 핸들이 무효인 프로세스(pytest 기본 캡처 등)에서는
+    `OSError [WinError 6]` 으로 죽는다.
+    """
     if args and args[0] in _NETWORK_GIT:
         raise GitNetworkError(f"네트워크 git 호출 금지: {args[0]}")
     return subprocess.run(
         ["git", "-C", root, *args],
+        stdin=subprocess.DEVNULL,
         capture_output=True,
         text=True,
         encoding="utf-8",

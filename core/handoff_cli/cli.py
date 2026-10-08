@@ -294,7 +294,7 @@ def _render_decisions(projection: dict, lang: str) -> str:
     return "\n\n".join(part for part in parts if part)
 
 
-def resume_directives(project_name: str, topic: str, lang: str, *,
+def resume_directives(project_name: str, topic: str, lang: str, *, project_root: str,
                       standing_block: str = "", active_constraints: str = "",
                       intent_block: str = "", exact_block: str = "",
                       recap_block: str = "", dialogue_block: str = "",
@@ -375,6 +375,10 @@ def resume_directives(project_name: str, topic: str, lang: str, *,
         messages.msg("resume_read_instruction", lang, detail_path=detail_path,
                      constraint_paths=(", ".join(constraint_paths)
                                        if constraint_paths else messages.msg("resume_none", lang))),
+        "",
+        # 세션 목록은 모델만 볼 수 있다. 비교 루트는 저장 머신 경로가 아닌 live 루트다.
+        messages.msg("resume_chair_notice", lang, project_root=project_root,
+                     project_name=project_name, topic=topic),
         "",
         # 복명이 **마지막 블록**이다. 뒤에 블록을 더 붙이면 「여기서 멈추고 지시를
         # 기다린다」가 마지막 줄이 아니게 되고, 그 자리에 있던 로그 언어 안내가
@@ -2419,7 +2423,8 @@ def cmd_resume(cwd: str, topic: str, root: str | None = None) -> dict:
         "scope_guard": messages.msg("resume_scope_guard", lang, project_name=name, topic=topic),
         "work_id": _front_value(front, "work_id"),
         "resume_directives": resume_directives(
-            name, topic, lang, work_id=_front_value(front, "work_id") or "",
+            name, topic, lang, project_root=resolved,
+            work_id=_front_value(front, "work_id") or "",
             standing_block=standing_block,
             active_constraints=active_constraints, intent_block=intent_block,
             exact_block=exact_block, recap_block=recap_block,

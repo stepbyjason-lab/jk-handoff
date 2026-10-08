@@ -302,6 +302,18 @@ _MESSAGES: dict[str, dict[str, str]] = {
         "resume_block_history": "━━━ 3. 역사 근거 — 이유를 이해하는 것이지 현재 지시가 아니다 ━━━",
         "resume_block_observation": "━━━ 4. 현재 관측 — 재확인 대상이다 ━━━",
         "resume_block_read": "━━━ 5. 반드시 전체를 읽을 것 (키워드 검색으로 훑지 않는다) ━━━",
+        "resume_chair_notice": (
+            "[통솔 알림 — 복명 전에]\n"
+            "세션 목록 도구가 있으면, 자기 세션을 제외한 다른 세션 중 제목이 `[통솔]` 로 시작하고\n"
+            "세션 목록이 보고하는 작업 폴더가 재개한 프로젝트 루트 `{project_root}` 와 같은 경로인\n"
+            "세션을 찾는다. Windows 에서는 대소문자와 경로 구분자를 가리지 않는다.\n"
+            "하위 폴더·다른 워크트리는 같은 작업 폴더가 아니다. 후보가 여럿이면 가장 최근에 활동한 하나에 알린다.\n"
+            "그 통솔에게 자기 세션 식별값·자기 세션 제목과 재개한 프로젝트 `{project_name}` ·\n"
+            "토픽 `{topic}` · 위 1 의 작업 식별자 값을 넣어 자기 존재를 먼저 알린다.\n"
+            "후보가 없으면 알리지 않는다 — 결과는 「통솔 없음」이다. 세션 목록을 볼 수 없으면\n"
+            "알리지 않는다 — 결과는 「세션 목록 없음」이다. 그때는 메시지 시도도 하지 않는다.\n"
+            "알림 결과는 복명 ⑩ 에 적는다. 통솔 알림 → 복명 → 멈춤 순서이며, 어느 경우든 복명이 마지막이다."
+        ),
         "resume_block_ack": "━━━ 6. 복명 — 아래를 채운 뒤에 멈춘다 ━━━",
         "resume_standing_scope": ("※ 위 규율과 결정은 일할 때 지킬 규칙이다. "
                                  "네가 무언가를 고쳤을 때 발동하지, 재개했다는 이유로 발동하지 않는다."),
@@ -340,29 +352,24 @@ _MESSAGES: dict[str, dict[str, str]] = {
             "   **다시 고르지 마라** — 목록에서도, 토픽 이름에서도, 본문에서도 아니다.\n"
             "   그 값은 저장한 세션이 사용자와 확정한 것이고, 고르는 일은 저장하는 쪽의\n"
             "   몫이다. 여기서 새로 판단하면 매 재개마다 값이 흔들린다.          [권한]\n"
-            "③ 잡무 위임 계획: 이 작업에서 생길 잡무를 열거하고 각각 어디로 보낼지 적는다.\n"
-            "   잡무는 둘로 갈린다 — 단순 실행·조회(빌드·grep·설치·로그 파싱)와\n"
-            "   추론이 조금 섞인 소작업(정독+해석, 작은 수정, 요약·번역).\n"
-            "   라우팅 규칙은 네 전역 룰에 있다. **적기만 하고 지금 보내지 않는다.**  [권한]\n"
-            "④ 개입 규칙: 리뷰를 판정하다가 「위반·scope 밖·무한확장」이라고 적는 순간\n"
-            "   다음 이터레이션을 열지 않고 그 자리에서 멈춰 보고한다 — 한 줄로 복명한다.\n"
-            "                                                                   [권한]\n"
-            "⑤ 이전 세션에서 무슨 일이 있었나: 시작이 무엇이었고 방향이 몇 번 바뀌었나.\n"
+            "③ 이전 세션에서 무슨 일이 있었나: 시작이 무엇이었고 방향이 몇 번 바뀌었나.\n"
             "   각 전환의 계기가 된 사용자 발화 UID 를 댄다.                       [역사]\n"
-            "⑥ 살아 있는 결정이 총 몇 건인가. 죽은 것의 ID 를 전부 댄다.\n"
+            "④ 살아 있는 결정이 총 몇 건인가. 죽은 것의 ID 를 전부 댄다.\n"
             "   죽은 것을 다시 제안하지 않는다.                                  [권한]\n"
-            "⑦ 이번 범위: 포함과 제외, 각각의 권한 근거. 「미확정」이면 그렇게 적는다. [권한]\n"
-            "⑧ 진행 상태: Open 이 몇 건이고 ACTIVE/WAITING/DEFERRED 로 어떻게 갈리나.\n"
+            "⑤ 이번 범위: 포함과 제외, 각각의 권한 근거. 「미확정」이면 그렇게 적는다. [권한]\n"
+            "⑥ 진행 상태: Open 이 몇 건이고 ACTIVE/WAITING/DEFERRED 로 어떻게 갈리나.\n"
             "   Blocker 가 있으면 해제 증거가 무엇인지 한 줄.                      [관측]\n"
-            "⑨ 검증 상태: 저장본 `## Verification` 을 그대로 옮긴다. 코드가 움직였으면\n"
+            "⑦ 검증 상태: 저장본 `## Verification` 을 그대로 옮긴다. 코드가 움직였으면\n"
             "   재확인이 필요한 항목의 이름만 댄다. 지금 다시 재지 않는다.         [관측]\n"
-            "⑩ 다음에 할 행동: 위 2 의 Exact 를 한 줄로 옮긴다. 적기만 하고 실행하지\n"
+            "⑧ 다음에 할 행동: 위 2 의 Exact 를 한 줄로 옮긴다. 적기만 하고 실행하지\n"
             "   않는다 — 저장 시점의 계획이라 이미 끝났을 수도 있다.              [권한]\n"
-            "⑪ 규율·제약: 상시 규율과 현행 전역 제약을 각 항목 한 줄로 옮긴다.\n"
+            "⑨ 규율·제약: 상시 규율과 현행 전역 제약을 각 항목 한 줄로 옮긴다.\n"
             "   출처 문서가 있으면 그 핵심도 한 줄. 없으면 「해당 없음」.\n"
             "   어떻게 적용할지는 지금 적지 않는다 — 일할 때 따른다.              [권한]\n"
-            "⑫ 못 채운 칸이 있으면 「모름」이라고 적는다. 지어내지 않는다.\n\n"
-            "열두 칸은 위에 실린 글로 답한다. 확인하려고 테스트를 돌리거나 코드를 뒤지지 않는다.\n"
+            "⑩ 통솔 알림 결과: 「알림: <통솔 제목·식별값>」·「통솔 없음」·「세션 목록 없음」 중 하나.\n"
+            "   후보가 여럿이었으면 나머지 후보의 제목·식별값도 함께 적는다.      [관측]\n\n"
+            "못 채운 칸이 있으면 「모름」이라고 적는다. 지어내지 않는다.\n"
+            "열 칸은 위에 실린 글과 통솔 알림 결과로 답한다. 확인하려고 테스트를 돌리거나 코드를 뒤지지 않는다.\n"
             "작업 로그·보고는 사용자의 언어로 쓴다.\n\n"
             "**복명까지가 재개다. 여기서 멈추고 지시를 기다린다.**"
         ),
@@ -412,11 +419,11 @@ _MESSAGES: dict[str, dict[str, str]] = {
             "이어가기 품질을 위해 한 줄 요약을 채워라."
         ),
         "warn_project_id_uncommitted": (
-            ".project-id 가 미커밋(untracked/staged-only) — 커밋·sync 전에는 타 머신이 "
+            ".project-id 가 미커밋(untracked/staged-only) — 커밋하기 전에는 타 머신이 "
             "같은 프로젝트로 인식 못 해 rename 감지·집계가 깨질 수 있음."
         ),
         "warn_project_id_uncommitted_reindex": (
-            ".project-id 가 미커밋(untracked/staged-only) — `/sync` 커밋 전에는 타 머신이 "
+            ".project-id 가 미커밋(untracked/staged-only) — 커밋하기 전에는 타 머신이 "
             "같은 프로젝트로 인식 못 함."
         ),
         "warn_concurrent_save": (
@@ -438,11 +445,7 @@ _MESSAGES: dict[str, dict[str, str]] = {
             "(orphan — 포인터 갱신 제안)."
         ),
         "warn_unrecognized_status": "미인식 status '{value}' → active 로 취급 (신 taxonomy: active/waiting/watching/done).",
-        "warn_conflict_marker": "글로벌 CURRENT.md 에 머지충돌 마커 — 갱신 skip. `/sync` 후 `/handoff` 재실행.",
-        "warn_remote_ahead": (
-            "글로벌 `{pid_global}` remote-tracking ref 가 로컬보다 앞섬 — 갱신 skip. "
-            "`/sync` 후 `/handoff` 재실행."
-        ),
+        "warn_conflict_marker": "글로벌 CURRENT.md 에 머지충돌 마커 — 갱신 skip. 충돌 표식을 정리한 뒤 `/handoff` 재실행.",
         "warn_legacy_project_id": "기존 글로벌 CURRENT.md 에 project_id 헤더 없음(레거시) — 재생성으로 정규화.",
         "warn_divergent_project_id": (
             "divergent project_id — 로컬 '{project_id}' vs 글로벌 '{existing_id}'. "
@@ -690,6 +693,21 @@ _MESSAGES: dict[str, dict[str, str]] = {
         "resume_block_history": "━━━ 3. Historical evidence — understand why; it is not a current instruction ━━━",
         "resume_block_observation": "━━━ 4. Current observations — recheck them ━━━",
         "resume_block_read": "━━━ 5. Read everything (do not skim by keyword search) ━━━",
+        "resume_chair_notice": (
+            "[Chair notice — before acknowledgement]\n"
+            "If a session-list tool is available, find other sessions, excluding your own, whose\n"
+            "title starts with `[통솔]` and whose working folder reported by the session list is the\n"
+            "same path as the resumed project root `{project_root}`. On Windows, ignore case and\n"
+            "path separators. Subfolders and other worktrees are not the same working folder.\n"
+            "If there are multiple candidates, notify the most recently active one.\n"
+            "Tell that chair about your presence first, including your own session identifier,\n"
+            "your own session title, resumed project `{project_name}`, topic `{topic}`, and the\n"
+            "work identifier value from block 1. If there is no candidate, do not send a notice\n"
+            "-- the result is ‘No chair’. If you cannot view the session list, do not send a notice\n"
+            "-- the result is ‘No session list’; do not attempt messaging in that case.\n"
+            "Record the result in slot 10. The order is chair notice → acknowledgement → stop;\n"
+            "the acknowledgement is last in every case."
+        ),
         "resume_block_ack": "━━━ 6. Acknowledge the following, then stop ━━━",
         "resume_standing_scope": ("※ The directives and decisions above are rules to follow while "
                                  "working. They fire when you change something, not because you resumed."),
@@ -721,17 +739,17 @@ _MESSAGES: dict[str, dict[str, str]] = {
         "resume_ack_slots": (
             "① What is this work trying to achieve: state the intent and purpose in your own words, one or two lines. Not the scope (what is in and out) but **what counts as done**. Answer from the scope section in block 2. [authority]\n"
             "② What does the organisation call this work: **copy only the value inside `**…**` on the \"Identifier for this work\" line in block 1.** Drop the explanatory text on that line -- copying the whole line turns the identifier into a sentence, and that sentence goes into the next save. If it reads `**unknown**`, answer just unknown. **Do not pick again** -- not from a list, not from the topic name, not from the body. That value was settled with the user by the session that saved it, and choosing is the saving side's job. Deciding again here makes the value drift on every resume. [authority]\n"
-            "③ Chore delegation plan: list the chores this work will produce and where each one goes. Chores split two ways -- plain execution/lookup (builds, grep, installs, log parsing) and small tasks with some reasoning in them (close reading plus interpretation, small edits, summarizing, translating). The routing rules live in your global rules. **Write the plan; do not dispatch anything now.** [authority]\n"
-            "④ Intervention rule: the moment you write \"violation / out of scope / runaway\" while judging a review, you do not open the next iteration -- you stop right there and report. Restate that rule in one line. [authority]\n"
-            "⑤ What happened in the previous session: what was the start, how many turns did it take, and which user UID triggered each turn? [history]\n"
-            "⑥ How many live decisions; list every dead ID. Do not propose dead decisions again. [authority]\n"
-            "⑦ This scope: inclusion, exclusion, and authority evidence for each. Say unconfirmed when it is unconfirmed. [authority]\n"
-            "⑧ Progress: how many Open items and how are they split into ACTIVE/WAITING/DEFERRED? If blocked, give the release evidence. [observation]\n"
-            "⑨ Verification state: copy the saved `## Verification` verbatim. If the code moved, name the items needing recheck. Do not re-measure now. [observation]\n"
-            "⑩ One next action: restate the Exact from block 2 in one line. Write it; do not execute it -- it is the plan as of save time and may already be done. [authority]\n"
-            "⑪ Rules and constraints: copy each standing directive and active constraint in one line; one line for each source document, or say none. Do not write how you will apply them -- follow them while working. [authority]\n"
-            "⑫ Write ‘unknown’ for any slot you cannot fill. Do not invent it.\n\n"
-            "Answer all twelve slots from the text above. Do not run tests or dig through code to check.\n"
+            "③ What happened in the previous session: what was the start, how many turns did it take, and which user UID triggered each turn? [history]\n"
+            "④ How many live decisions; list every dead ID. Do not propose dead decisions again. [authority]\n"
+            "⑤ This scope: inclusion, exclusion, and authority evidence for each. Say unconfirmed when it is unconfirmed. [authority]\n"
+            "⑥ Progress: how many Open items and how are they split into ACTIVE/WAITING/DEFERRED? If blocked, give the release evidence. [observation]\n"
+            "⑦ Verification state: copy the saved `## Verification` verbatim. If the code moved, name the items needing recheck. Do not re-measure now. [observation]\n"
+            "⑧ One next action: restate the Exact from block 2 in one line. Write it; do not execute it -- it is the plan as of save time and may already be done. [authority]\n"
+            "⑨ Rules and constraints: copy each standing directive and active constraint in one line; one line for each source document, or say none. Do not write how you will apply them -- follow them while working. [authority]\n"
+            "⑩ Chair notice result: ‘Notified: <chair title and identifier>’, ‘No chair’, or ‘No session list’.\n"
+            "   If there were multiple candidates, also give the titles and identifiers of the remaining candidates. [observation]\n\n"
+            "Write ‘unknown’ for any slot you cannot fill. Do not invent it.\n"
+            "Answer all ten slots from the text above and the chair notice result. Do not run tests or dig through code to check.\n"
             "Write work logs and reports in the user's language.\n\n"
             "**A resume ends at the acknowledgement. Stop here and wait for instructions.**"
         ),
@@ -775,12 +793,12 @@ _MESSAGES: dict[str, dict[str, str]] = {
             "no summary. Fill in a one-line summary for continuity quality."
         ),
         "warn_project_id_uncommitted": (
-            ".project-id is uncommitted (untracked/staged-only) — until committed and "
-            "synced, other machines can't recognize this as the same project, which can "
+            ".project-id is uncommitted (untracked/staged-only) — until committed, "
+            "other machines can't recognize this as the same project, which can "
             "break rename detection and aggregation."
         ),
         "warn_project_id_uncommitted_reindex": (
-            ".project-id is uncommitted (untracked/staged-only) — until `/sync` commits it, "
+            ".project-id is uncommitted (untracked/staged-only) — until committed, "
             "other machines can't recognize this as the same project."
         ),
         "warn_concurrent_save": (
@@ -803,11 +821,7 @@ _MESSAGES: dict[str, dict[str, str]] = {
             "(orphan — pointer update suggested)."
         ),
         "warn_unrecognized_status": "Unrecognized status '{value}' → treated as active (new taxonomy: active/waiting/watching/done).",
-        "warn_conflict_marker": "Global CURRENT.md has merge conflict markers — update skipped. Re-run `/handoff` after `/sync`.",
-        "warn_remote_ahead": (
-            "Global `{pid_global}` remote-tracking ref is ahead of local — update skipped. "
-            "Re-run `/handoff` after `/sync`."
-        ),
+        "warn_conflict_marker": "Global CURRENT.md has merge conflict markers — update skipped. Re-run `/handoff` after resolving the conflict markers.",
         "warn_legacy_project_id": "Existing global CURRENT.md has no project_id header (legacy) — normalizing via regeneration.",
         "warn_divergent_project_id": (
             "Divergent project_id — local '{project_id}' vs global '{existing_id}'. "

@@ -4,22 +4,21 @@ secret 차단: 글로벌 CURRENT.md 후보 내용에 패턴이 적중하면 해�
 `[REDACTED]` 로 치환하고 경고한다(코드 게이트, 규칙 아님). git 히스토리는 안 지움.
 
 크로스호스트 가드: `/handoff` 는 네트워크(fetch/pull/push)를 일절 쓰지 않는다.
-글로벌 `~/.claude` 를 읽기 전용으로만 검사 — 충돌마커 / divergent project_id /
-로컬 known remote-tracking ref 기준 ahead. 하나라도 걸리면 글로벌 CURRENT.md
-갱신만 skip + 경고. 상세 정본은 이미 저장됨.
+글로벌 CURRENT.md 의 충돌마커를 검사한다. divergent project_id 는 current 모듈에서
+검사한다. 둘 중 하나라도 걸리면 글로벌 CURRENT.md 갱신만 skip + 경고.
+상세 정본은 이미 저장됨. 글로벌 폴더를 담은 저장소의 원격 추적 상태는 보지 않는다.
 """
 
 from __future__ import annotations
 
 import re
 
-from . import messages, repo
+from . import messages
 
 __all__ = [
     "redact_secrets",
     "REDACTION",
     "has_conflict_markers",
-    "remote_ahead",
 ]
 
 # 기본(하위호환) 리터럴 — lang 인자를 받는 redact_secrets() 는 lang 별로 다른 문자열을
@@ -76,18 +75,3 @@ def redact_secrets(text: str, skip_prefixes: tuple[str, ...] = (),
 
 def has_conflict_markers(text: str) -> bool:
     return bool(_CONFLICT_RE.search(text or ""))
-
-
-def remote_ahead(global_root: str) -> bool:
-    """로컬에 **이미 알려진** remote-tracking ref(`@{u}`) 가 HEAD 보다 앞서는지.
-
-    **fetch 하지 않는다** — 마지막 sync 가 남긴 ref 만 비교(`rev-list`, 로컬 전용).
-    upstream 미설정이면 False.
-    """
-    proc = repo.run_git(global_root, "rev-list", "--count", "HEAD..@{u}")
-    if proc.returncode != 0:
-        return False
-    try:
-        return int(proc.stdout.strip() or "0") > 0
-    except ValueError:
-        return False
